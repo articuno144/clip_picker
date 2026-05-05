@@ -35,9 +35,12 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .seg-dot.active{border-color:var(--primary);background:var(--primary);color:#fff;box-shadow:0 0 0 4px var(--primary-weak)}
 .seg-dot:hover{transform:scale(1.1)}
 .progress-arrow{color:var(--muted-2);font-size:10px;flex-shrink:0}
-#done-btn{margin-left:auto;padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;opacity:.55;transition:all .2s;box-shadow:0 4px 12px rgba(37,99,235,.16)}
-#done-btn.ready{opacity:1}
-#done-btn:hover.ready{background:var(--primary-hover)}
+#export-controls{margin-left:auto;display:flex;align-items:center;gap:8px;flex-shrink:0}
+#export-type{background:#fff;color:var(--text);border:1px solid var(--line-strong);border-radius:8px;padding:7px 10px;font-size:13px;font-weight:700}
+#export-btn{padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;opacity:.55;transition:all .2s;box-shadow:0 4px 12px rgba(37,99,235,.16)}
+#export-btn.ready{opacity:1}
+#export-btn:hover.ready{background:var(--primary-hover)}
+#export-btn:disabled{cursor:not-allowed;opacity:.45}
 
 /* ── main layout ── */
 #main{display:flex;flex:1;overflow:hidden}
@@ -93,6 +96,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .duration-fill.selected{display:flex;background:transparent;gap:2px}
 .duration-segment{height:100%;background:var(--primary);min-width:2px}
 .duration-fill.narration{background:var(--success)}
+#export-progress{display:none;padding:14px 18px;background:#fff;border-top:1px solid var(--line);flex-shrink:0}
+#export-progress.show{display:block}
+#export-progress .label{display:flex;justify-content:space-between;font-size:12px;font-weight:800;color:var(--muted);margin-bottom:8px}
+#export-track{height:10px;background:#dbe4f0;border-radius:999px;overflow:hidden;border:1px solid #c7d3e3}
+#export-fill{height:100%;width:0%;background:var(--primary);border-radius:999px;transition:width .25s ease}
+#export-message{font-size:12px;color:var(--muted);margin-top:8px;line-height:1.4}
+#export-message a{color:var(--primary);font-weight:800;text-decoration:none}
 
 /* ── toast ── */
 #toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172033;color:#fff;padding:10px 24px;border-radius:999px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;box-shadow:var(--shadow)}
@@ -105,7 +115,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   #sheet-container{width:100%;min-height:440px;overflow:visible}
   #sheet-img{width:calc(100vw - 28px);max-width:calc(100vw - 28px);height:auto;max-height:none}
   #prompt-bar .text{overflow-wrap:anywhere}
-  #done-btn{margin-left:0}
+  #export-controls{margin-left:0}
 }
 </style>
 </head>
@@ -115,7 +125,13 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 <div id="topbar">
   <h1 id="proj-title">Clip Picker</h1>
   <div id="seg-dots"></div>
-  <button id="done-btn" onclick="finish()">✓ 完成</button>
+  <div id="export-controls">
+    <select id="export-type" aria-label="导出格式">
+      <option value="selections">selections.json</option>
+      <option value="fcpxml">FCPXML</option>
+    </select>
+    <button id="export-btn" onclick="exportSelection()">↗ 导出</button>
+  </div>
 </div>
 
 <!-- MAIN -->
@@ -155,6 +171,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
         <div class="duration-label"><span class="duration-dot narration"></span><span>旁白时长</span></div>
         <div class="duration-track"><div id="sum-narr-bar" class="duration-fill narration"></div></div>
       </div>
+    </div>
+    <div id="export-progress">
+      <div class="label"><span id="export-step">准备导出</span><span id="export-percent">0%</span></div>
+      <div id="export-track"><div id="export-fill"></div></div>
+      <div id="export-message"></div>
     </div>
   </div>
 </div>
@@ -235,7 +256,7 @@ function updateDoneBtn() {
     const total = sel.parts.reduce((s, p) => s + (p.end - p.start), 0);
     return total >= seg.narration_duration - 2;
   });
-  document.getElementById("done-btn").classList.toggle("ready", allDone);
+  document.getElementById("export-btn").classList.toggle("ready", allDone);
 }
 
 // ── navigation ──
@@ -614,7 +635,7 @@ async function autoSave() {
   }
 }
 
-async function finish() {
+async function exportSelection() {
   const allDone = CONFIG.segments.every(seg => {
     const sel = CONFIG.selections[seg.id];
     if (!sel || !sel.parts || sel.parts.length === 0) return false;
@@ -622,21 +643,73 @@ async function finish() {
     return total >= seg.narration_duration - 2;
   });
   if (!allDone) {
-    if (!confirm("还有 segment 未完成，确定要结束吗？")) return;
+    if (!confirm("还有 segment 未完成，确定要导出吗？")) return;
   }
-  await autoSave();
-  if (confirm("要现在提取所有 clip 吗？")) {
-    toast("正在提取 clip...");
-    const r = await fetch("/api/extract", {
+  const exportType = document.getElementById("export-type").value;
+  showExportProgress("准备导出", 0, "");
+  setExportBusy(true);
+  try {
+    const r = await fetch("/api/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ selections: CONFIG.selections }),
+      body: JSON.stringify({ type: exportType, selections: CONFIG.selections }),
     });
     const data = await r.json();
-    const okCount = (data.results || []).filter(x => x.ok).length;
-    const failCount = (data.results || []).filter(x => x.ok === false).length;
-    toast(failCount ? `提取完成：${okCount} 成功，${failCount} 失败` : "提取完成！" + okCount + " 个 clip");
+    if (!r.ok || !data.ok) throw new Error(data.error || "导出启动失败");
+    pollExport(data.job_id);
+  } catch (err) {
+    setExportBusy(false);
+    showExportProgress("失败", 100, escapeHtml(err.message || String(err)));
   }
+}
+
+async function pollExport(jobId) {
+  try {
+    const r = await fetch("/api/export/" + encodeURIComponent(jobId));
+    const job = await r.json();
+    if (!r.ok) throw new Error(job.error || "导出状态读取失败");
+    showExportProgress(job.step || "导出中", Number(job.progress) || 0, exportJobMessage(job));
+    if (job.status === "done") {
+      setExportBusy(false);
+      toast("导出完成");
+      return;
+    }
+    if (job.status === "error") {
+      setExportBusy(false);
+      toast("导出失败");
+      return;
+    }
+    setTimeout(() => pollExport(jobId), 800);
+  } catch (err) {
+    setExportBusy(false);
+    showExportProgress("失败", 100, escapeHtml(err.message || String(err)));
+  }
+}
+
+function exportJobMessage(job) {
+  if (job.status === "done") {
+    const label = job.type === "fcpxml" ? "下载 FCPXML" : "下载 selections.json";
+    return `已导出到 ${escapeHtml(job.file || "")} · <a href="${job.download}">${label}</a>`;
+  }
+  if (job.status === "error") return escapeHtml(job.error || "导出失败");
+  return job.type === "fcpxml"
+    ? "步骤：保存 selections.json → 提取 clips → 生成 FCPXML"
+    : "步骤：保存 selections.json";
+}
+
+function showExportProgress(step, progress, message) {
+  const panel = document.getElementById("export-progress");
+  panel.classList.add("show");
+  const pct = Math.max(0, Math.min(100, Math.round(progress)));
+  document.getElementById("export-step").textContent = step;
+  document.getElementById("export-percent").textContent = pct + "%";
+  document.getElementById("export-fill").style.width = pct + "%";
+  document.getElementById("export-message").innerHTML = message || "";
+}
+
+function setExportBusy(isBusy) {
+  document.getElementById("export-btn").disabled = isBusy;
+  document.getElementById("export-type").disabled = isBusy;
 }
 
 window.addEventListener("resize", () => drawOverlays());

@@ -15,6 +15,10 @@ import os
 import re
 import subprocess
 import argparse
+import sys
+import threading
+import time
+import uuid
 from pathlib import Path
 
 APP_ROOT = Path(__file__).resolve().parent
@@ -34,6 +38,8 @@ DEFAULT_SHEET_COLS = 8
 DEFAULT_SHEET_ROWS = 8
 DEFAULT_SECS_PER_CELL = 5
 VIDEO_EXTS = {".mp4", ".mov", ".mkv", ".m4v", ".webm"}
+EXPORT_JOBS = {}
+JOB_LOCK = threading.Lock()
 
 def configure_paths(config_path: str | None = None, selections_path: str | None = None) -> None:
     global CFG_FILE, SEL_FILE, PROJECT_ROOT
@@ -226,6 +232,136 @@ def run_ffmpeg(cmd, timeout: int = 120):
     except subprocess.TimeoutExpired:
         return False, "ffmpeg timed out"
 
+def set_job(job_id: str, **updates) -> None:
+    with JOB_LOCK:
+        EXPORT_JOBS.setdefault(job_id, {}).update(updates)
+
+def find_prepare_script(cfg: dict) -> Path | None:
+    configured = cfg.get("prepare_script")
+    candidates = []
+    if configured:
+        candidates.append(cfg_path(cfg, "prepare_script", PROJECT_ROOT / "prepare.py"))
+    candidates.extend([
+        PROJECT_ROOT / "prepare.py",
+        Path.home() / ".claude" / "skills" / "bilibili-video" / "prepare.py",
+    ])
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_file():
+            return candidate
+    return None
+
+def fcpxml_path(cfg: dict) -> Path:
+    configured = cfg.get("fcpxml_file")
+    if configured:
+        path = Path(configured).expanduser()
+        return path if path.is_absolute() else PROJECT_ROOT / path
+    return PROJECT_ROOT / "out" / "timeline.fcpxml"
+
+def extract_clips(selections: dict, cfg: dict, settings: dict) -> list[dict]:
+    results = []
+    for seg in cfg["segments"]:
+        sid = seg["id"]
+        if sid not in selections:
+            continue
+        sel = selections[sid]
+        ep = sel.get("episode", seg.get("suggested_episode", "01"))
+        parts = sel.get("parts", [])
+        if not parts:
+            continue
+
+        shot_dir = settings["output_dir"] / safe_label(sid)
+        parts_dir = shot_dir / "parts"
+        parts_dir.mkdir(parents=True, exist_ok=True)
+        for old_part in parts_dir.glob("[0-9][0-9]_*.mp4"):
+            old_part.unlink(missing_ok=True)
+
+        ep_file = find_episode_file(settings["episode_dir"], cfg, ep)
+        if not ep_file:
+            results.append({"id": sid, "error": f"Episode {ep} not found", "ok": False})
+            continue
+
+        extracted_files = []
+        for i, part in enumerate(parts):
+            coerced = coerce_part(part)
+            if not coerced:
+                results.append({"id": sid, "part": i + 1, "error": "Invalid start/end", "ok": False})
+                continue
+            start_s, end_s = coerced
+            dur_s = end_s - start_s
+            out = parts_dir / f"{i+1:02d}_{safe_label(part.get('label', 'part'))}.mp4"
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(start_s), "-i", str(ep_file),
+                "-t", str(dur_s), "-c", "copy",
+                str(out),
+            ]
+            ok, error = run_ffmpeg(cmd)
+            if ok:
+                extracted_files.append(out)
+                results.append({"id": sid, "part": i + 1, "file": str(out), "size": out.stat().st_size, "ok": True})
+            else:
+                results.append({"id": sid, "part": i + 1, "error": error, "ok": False})
+
+        if not extracted_files:
+            continue
+        concat_list = parts_dir / "_concat.txt"
+        with open(concat_list, "w", encoding="utf-8") as fh:
+            for pf in extracted_files:
+                fh.write(concat_file_line(pf))
+        clip_out = shot_dir / "clip.mp4"
+        ok, error = run_ffmpeg(
+            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
+             "-c", "copy", str(clip_out)])
+        concat_list.unlink(missing_ok=True)
+        if ok:
+            results.append({"id": sid, "merged": str(clip_out), "ok": True})
+        else:
+            results.append({"id": sid, "merged": str(clip_out), "error": error, "ok": False})
+    return results
+
+def export_worker(job_id: str, export_type: str, selections: dict) -> None:
+    try:
+        cfg = load_cfg()
+        settings = runtime_settings(cfg)
+        set_job(job_id, status="running", step="保存 selections.json", progress=10)
+        save_selections(selections)
+
+        if export_type == "selections":
+            set_job(job_id, status="done", step="完成", progress=100, file=str(SEL_FILE), download="/api/download/selections")
+            return
+
+        if export_type != "fcpxml":
+            raise ValueError("Unsupported export type")
+
+        set_job(job_id, step="提取 clips", progress=30)
+        results = extract_clips(selections, cfg, settings)
+        failed = [item for item in results if item.get("ok") is False]
+        if failed:
+            first = failed[0]
+            raise RuntimeError(first.get("error") or "Clip extraction failed")
+
+        prepare_script = find_prepare_script(cfg)
+        if not prepare_script:
+            raise FileNotFoundError("No prepare.py found. Set prepare_script in segments.json or install the bilibili-video skill.")
+
+        set_job(job_id, step="生成 FCPXML", progress=70)
+        r = subprocess.run(
+            [sys.executable, str(prepare_script)],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=900,
+        )
+        if r.returncode != 0:
+            raise RuntimeError((r.stderr or r.stdout or "prepare.py failed")[-1200:])
+
+        out = fcpxml_path(cfg)
+        if not out.exists():
+            raise FileNotFoundError(f"prepare.py finished but FCPXML was not found at {out}")
+        set_job(job_id, status="done", step="完成", progress=100, file=str(out), download="/api/download/fcpxml")
+    except Exception as exc:
+        set_job(job_id, status="error", step="失败", progress=100, error=str(exc))
+
 # ── Flask app ───────────────────────────────────────────────────────
 from flask import Flask, jsonify, request, send_file
 
@@ -306,71 +442,52 @@ def api_extract():
         settings = runtime_settings(cfg)
     except Exception as exc:
         return error_response(str(exc), 500)
-    results = []
+    return jsonify({"results": extract_clips(selections, cfg, settings)})
 
-    for seg in cfg["segments"]:
-        sid = seg["id"]
-        if sid not in selections:
-            continue
-        sel = selections[sid]
-        ep = sel.get("episode", seg.get("suggested_episode", "01"))
-        parts = sel.get("parts", [])
-        if not parts:
-            continue
+@app.route("/api/export", methods=["POST"])
+def api_export():
+    data = request.get_json(silent=True) or {}
+    selections = data.get("selections", {})
+    export_type = data.get("type", "selections")
+    if not isinstance(selections, dict):
+        return error_response("selections must be an object")
+    job_id = uuid.uuid4().hex
+    with JOB_LOCK:
+        EXPORT_JOBS[job_id] = {
+            "id": job_id,
+            "status": "queued",
+            "step": "排队中",
+            "progress": 0,
+            "type": export_type,
+            "created_at": time.time(),
+        }
+    thread = threading.Thread(target=export_worker, args=(job_id, export_type, selections), daemon=True)
+    thread.start()
+    return jsonify({"ok": True, "job_id": job_id})
 
-        shot_dir = settings["output_dir"] / safe_label(sid)
-        parts_dir = shot_dir / "parts"
-        parts_dir.mkdir(parents=True, exist_ok=True)
-        for old_part in parts_dir.glob("[0-9][0-9]_*.mp4"):
-            old_part.unlink(missing_ok=True)
+@app.route("/api/export/<job_id>")
+def api_export_status(job_id):
+    with JOB_LOCK:
+        job = EXPORT_JOBS.get(job_id)
+        if not job:
+            return error_response("Export job not found", 404)
+        return jsonify(job)
 
-        # Find episode file
-        ep_file = find_episode_file(settings["episode_dir"], cfg, ep)
-        if not ep_file:
-            results.append({"id": sid, "error": f"Episode {ep} not found"})
-            continue
+@app.route("/api/download/selections")
+def download_selections():
+    if not SEL_FILE.exists():
+        return error_response("selections.json has not been exported yet", 404)
+    return send_file(str(SEL_FILE), as_attachment=True, download_name="selections.json")
 
-        extracted_files = []
-        for i, part in enumerate(parts):
-            coerced = coerce_part(part)
-            if not coerced:
-                results.append({"id": sid, "part": i + 1, "error": "Invalid start/end", "ok": False})
-                continue
-            start_s, end_s = coerced
-            dur_s = end_s - start_s
-            out = parts_dir / f"{i+1:02d}_{safe_label(part.get('label', 'part'))}.mp4"
-            cmd = [
-                "ffmpeg", "-y",
-                "-ss", str(start_s), "-i", str(ep_file),
-                "-t", str(dur_s), "-c", "copy",
-                str(out),
-            ]
-            ok, error = run_ffmpeg(cmd)
-            if ok:
-                extracted_files.append(out)
-                sz = out.stat().st_size
-                results.append({"id": sid, "part": i+1, "file": str(out), "size": sz, "ok": True})
-            else:
-                results.append({"id": sid, "part": i+1, "error": error, "ok": False})
-
-        # Merge parts into clip.mp4
-        if not extracted_files:
-            continue
-        concat_list = parts_dir / "_concat.txt"
-        with open(concat_list, "w", encoding="utf-8") as fh:
-            for pf in extracted_files:
-                fh.write(concat_file_line(pf))
-        clip_out = shot_dir / "clip.mp4"
-        ok, error = run_ffmpeg(
-            ["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list),
-             "-c", "copy", str(clip_out)])
-        concat_list.unlink(missing_ok=True)
-        if ok:
-            results.append({"id": sid, "merged": str(clip_out), "ok": True})
-        else:
-            results.append({"id": sid, "merged": str(clip_out), "error": error, "ok": False})
-
-    return jsonify({"results": results})
+@app.route("/api/download/fcpxml")
+def download_fcpxml():
+    try:
+        path = fcpxml_path(load_cfg())
+    except Exception as exc:
+        return error_response(str(exc), 500)
+    if not path.exists():
+        return error_response("FCPXML has not been generated yet", 404)
+    return send_file(str(path), as_attachment=True, download_name=path.name)
 
 
 if __name__ == "__main__":

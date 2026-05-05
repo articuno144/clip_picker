@@ -107,9 +107,20 @@ done
 3. Edit `segments.json` with segment definitions, narration durations, and search hints
 4. Generate contact sheets for all episodes
 5. Run `python clip_picker.py` and visually select clip ranges
-6. Click "完成" — the app extracts all clips via ffmpeg
-7. Run `prepare.py` from the bilibili-video skill to generate FCPXML + SRT
-8. Import into DaVinci Resolve for final editing
+6. Choose an export type and click `导出`
+   - `selections.json`: saves and downloads the current selections
+   - `FCPXML`: saves selections, extracts clips, runs `prepare.py`, then downloads the generated FCPXML
+7. Import the FCPXML into DaVinci Resolve for final editing
+
+## FCPXML export
+
+FCPXML export needs a `prepare.py` script. Clip Picker searches in this order:
+
+1. `prepare_script` in `segments.json`
+2. `prepare.py` in the same project folder as `segments.json`
+3. `~/.claude/skills/bilibili-video/prepare.py`
+
+By default the generated file is expected at `out/timeline.fcpxml`. Override it with `fcpxml_file` in `segments.json` if your prepare script writes somewhere else.
 
 ## Notes
 

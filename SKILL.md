@@ -41,6 +41,8 @@ Contact sheets should be named with one of these patterns:
 - `01_page0.jpg`
 - `<safe_video_stem>_page0.jpg`
 
+Prefer a 720p SDR source folder, such as `episodes_720p`, when the project also has higher-resolution or HDR copies.
+
 ## Workflow
 
 1. Start the server with `--config`.

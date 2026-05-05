@@ -1,7 +1,8 @@
 {
   "title": "Clip Picker Demo",
-  "episode_dir": "videos",
+  "episode_dir": "episodes_720p",
   "contact_sheet_dir": "contact_sheets",
+  "subtitle_dir": "subs",
   "output_dir": "assets/shots",
   "contact_sheet_cols": 8,
   "contact_sheet_rows": 8,

@@ -43,7 +43,7 @@ clip-picker/
 ```json
 {
   "title": "Project title",
-  "episode_dir": "videos",
+  "episode_dir": "episodes_720p",
   "contact_sheet_dir": "contact_sheets",
   "subtitle_dir": "subs",
   "output_dir": "assets/shots",
@@ -107,7 +107,7 @@ Use `--force` to regenerate existing sheets.
 ## Workflow
 
 1. Write `script.md` (narration + frontmatter)
-2. Put source videos in the folder configured by `episode_dir`
+2. Put source videos in the folder configured by `episode_dir` (720p SDR is recommended)
 3. Edit `segments.json` with segment definitions, narration durations, and search hints
 4. Generate contact sheets for all episodes
 5. Run `python clip_picker.py` and visually select clip ranges
@@ -128,7 +128,7 @@ By default the generated file is expected at `out/timeline.fcpxml`. Override it 
 
 ## Notes
 
-- Episode files should be 720p SDR (H.264, BT.709) to avoid HDR tone-mapping issues
+- Episode files should be 720p SDR (H.264, BT.709) to avoid HDR tone-mapping issues; for projects with multiple source folders, point `episode_dir` at the 720p folder
 - Contact sheets are generated at `fps=1/5` (one frame every 5 seconds)
 - The app auto-saves selections to `selections.json` on every change
 - Clip extraction uses `-c copy` (no re-encode), so it's fast and lossless

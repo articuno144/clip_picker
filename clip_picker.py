@@ -128,12 +128,15 @@ def discover_episode_records(episode_dir: Path, cfg: dict) -> list[dict]:
 
 def discover_sheets(sheet_dir: Path, episode: dict) -> dict:
     """Return {page_num: filename} for an episode."""
-    sheets = {}
     ep_id = episode["id"]
     stem = safe_label(Path(episode["file"]).stem)
-    prefixes = [f"ep{ep_id}_page", f"{ep_id}_page", f"{stem}_page"]
-    if sheet_dir.exists():
-        for f in sheet_dir.iterdir():
+    prefix_groups = [[f"ep{ep_id}_page", f"{ep_id}_page"], [f"{stem}_page"]]
+    if not sheet_dir.exists():
+        return {}
+
+    for prefixes in prefix_groups:
+        sheets = {}
+        for f in sorted(sheet_dir.iterdir(), key=lambda p: p.name.lower()):
             name = f.name
             if not f.is_file() or not name.lower().endswith((".jpg", ".jpeg", ".png", ".webp")):
                 continue
@@ -145,7 +148,9 @@ def discover_sheets(sheet_dir: Path, episode: dict) -> dict:
                     except ValueError:
                         pass
                     break
-    return sheets
+        if sheets:
+            return sheets
+    return {}
 
 def parse_subtitle_time(value: str) -> float:
     m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", value.strip())
@@ -170,10 +175,12 @@ def parse_srt(path: Path) -> list[dict]:
         if not cue_text:
             continue
         try:
+            clean_text = re.sub(r"<[^>]+>", "", cue_text)
+            clean_text = re.sub(r"\{\\[^}]+\}", "", clean_text).strip()
             cues.append({
                 "start": parse_subtitle_time(start_raw),
                 "end": parse_subtitle_time(end_raw),
-                "text": re.sub(r"<[^>]+>", "", cue_text),
+                "text": clean_text,
             })
         except ValueError:
             continue

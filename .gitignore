@@ -1,0 +1,13 @@
+__pycache__/
+*.pyc
+.DS_Store
+.venv/
+venv/
+selections.json
+videos/
+episodes/
+episodes_720p/
+contact_sheets/
+assets/shots/
+out/
+tmp_*/

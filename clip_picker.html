@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clip Picker</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#f6f8fc;
+  --panel:#ffffff;
+  --panel-soft:#f0f5ff;
+  --line:#dbe4f0;
+  --line-strong:#c7d3e3;
+  --text:#172033;
+  --muted:#667085;
+  --muted-2:#8a95a8;
+  --primary:#2563eb;
+  --primary-weak:#dbeafe;
+  --primary-hover:#1d4ed8;
+  --accent:#f59e0b;
+  --success:#059669;
+  --danger:#dc2626;
+  --shadow:0 10px 30px rgba(15,23,42,.08);
+}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* ── top bar ── */
+#topbar{display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(255,255,255,.92);border-bottom:1px solid var(--line);box-shadow:0 1px 8px rgba(15,23,42,.04);flex-shrink:0;overflow-x:auto}
+#topbar h1{font-size:15px;font-weight:700;white-space:nowrap;flex-shrink:0;color:var(--text)}
+#seg-dots{display:flex;align-items:center;gap:2px;flex-shrink:0}
+.seg-dot{width:30px;height:30px;border-radius:50%;border:2px solid var(--line-strong);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;cursor:pointer;transition:all .15s;background:#fff;color:var(--muted);flex-shrink:0}
+.seg-dot.done{border-color:var(--success);background:var(--success);color:#fff}
+.seg-dot.has-parts{border-color:var(--accent);color:#92400e;background:#fffbeb}
+.seg-dot.active{border-color:var(--primary);background:var(--primary);color:#fff;box-shadow:0 0 0 4px var(--primary-weak)}
+.seg-dot:hover{transform:scale(1.1)}
+.progress-arrow{color:var(--muted-2);font-size:10px;flex-shrink:0}
+#done-btn{margin-left:auto;padding:8px 20px;background:var(--primary);color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:700;cursor:pointer;opacity:.55;transition:all .2s;box-shadow:0 4px 12px rgba(37,99,235,.16)}
+#done-btn.ready{opacity:1}
+#done-btn:hover.ready{background:var(--primary-hover)}
+
+/* ── main layout ── */
+#main{display:flex;flex:1;overflow:hidden}
+#left{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#right{width:360px;background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;flex-shrink:0;box-shadow:-8px 0 24px rgba(15,23,42,.04)}
+
+/* ── segment info bar ── */
+#seg-info{padding:12px 18px;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0}
+#seg-info .slug{font-size:17px;font-weight:750;color:var(--text)}
+#seg-info .narration{font-size:13px;color:var(--muted);margin-top:5px;line-height:1.55;max-height:64px;overflow-y:auto}
+
+/* ── controls ── */
+#controls{display:flex;align-items:center;gap:10px;padding:10px 18px;background:var(--panel-soft);border-bottom:1px solid var(--line);flex-shrink:0;flex-wrap:wrap}
+#controls label{font-size:12px;font-weight:700;color:var(--muted)}
+#controls select,#controls input{background:#fff;color:var(--text);border:1px solid var(--line-strong);border-radius:7px;padding:6px 9px;font-size:12px}
+#page-nav{display:flex;align-items:center;gap:6px}
+#page-nav button{background:#fff;color:var(--text);border:1px solid var(--line-strong);border-radius:7px;padding:6px 11px;cursor:pointer;font-size:12px}
+#page-nav button:hover:not(:disabled){background:#eef4ff;border-color:#a8c3ff}
+#page-nav button:disabled{opacity:.45;cursor:not-allowed}
+#page-nav span{font-size:12px;color:var(--muted);min-width:150px;text-align:center}
+#sel-hint{font-size:12px;color:var(--primary);font-weight:700;display:none}
+#sheet-container{flex:1;display:flex;align-items:center;justify-content:center;padding:14px;overflow:auto;background:linear-gradient(180deg,#f8fbff,#eef3fb)}
+#sheet-img{max-width:100%;max-height:100%;object-fit:contain;cursor:crosshair;user-select:none;border:1px solid var(--line-strong);border-radius:10px;background:#fff;box-shadow:var(--shadow)}
+#empty-sheet{position:absolute;color:var(--muted);background:#fff;border:1px dashed var(--line-strong);border-radius:12px;padding:18px 22px;box-shadow:var(--shadow);display:none}
+
+/* ── selection overlay ── */
+.selection-box{position:absolute;border:2px solid var(--primary);background:rgba(37,99,235,0.18);pointer-events:none;z-index:10;border-radius:3px}
+.cell-highlight{position:absolute;outline:2px solid rgba(245,158,11,.9);background:rgba(245,158,11,0.22);pointer-events:none;z-index:9;border-radius:3px}
+
+/* ── prompt bar ── */
+#prompt-bar{padding:10px 18px;background:var(--panel);border-top:1px solid var(--line);flex-shrink:0}
+#prompt-bar .label{font-size:10px;color:var(--muted-2);text-transform:uppercase;letter-spacing:1px;font-weight:800}
+#prompt-bar .text{font-size:12px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:3px;max-height:44px;overflow-y:auto;white-space:pre-wrap}
+
+/* ── right panel ── */
+#right h3{font-size:15px;padding:16px 18px 10px;color:var(--text)}
+#parts-list{flex:1;overflow-y:auto;padding:0 14px}
+.part-item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:9px;box-shadow:0 4px 14px rgba(15,23,42,.05)}
+.part-item .range{font-weight:800;color:#b45309;font-size:14px}
+.part-item .info{font-size:11px;color:var(--muted);margin-top:3px}
+.part-item .remove{float:right;color:var(--danger);cursor:pointer;font-size:18px;line-height:1}
+#add-part-btn{display:block;width:calc(100% - 28px);padding:11px;margin:8px 14px 16px;background:#eff6ff;color:var(--primary);border:1px dashed #93b4ef;border-radius:10px;cursor:pointer;font-size:13px;font-weight:800}
+#add-part-btn:hover{background:#dbeafe}
+#summary{padding:14px 18px;background:var(--panel-soft);border-top:1px solid var(--line);flex-shrink:0}
+.duration-card{margin-bottom:12px}
+.duration-card:last-child{margin-bottom:0}
+.duration-label{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:800;color:var(--text);margin-bottom:7px}
+.duration-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.duration-dot.selected{background:var(--primary)}
+.duration-dot.narration{background:var(--success)}
+.duration-track{height:14px;border-radius:999px;background:#dbe4f0;overflow:hidden;border:1px solid #c7d3e3}
+.duration-fill{height:100%;border-radius:999px}
+.duration-fill.selected{display:flex;background:transparent;gap:2px}
+.duration-segment{height:100%;background:var(--primary);min-width:2px}
+.duration-fill.narration{background:var(--success)}
+
+/* ── toast ── */
+#toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#172033;color:#fff;padding:10px 24px;border-radius:999px;font-size:13px;z-index:999;opacity:0;transition:opacity .3s;box-shadow:var(--shadow)}
+#toast.show{opacity:1}
+@media (max-width: 900px){
+  body{height:auto;min-height:100vh;overflow:auto}
+  #main{flex-direction:column;overflow:visible}
+  #left{width:100%;max-width:100vw;min-height:720px;overflow:visible}
+  #right{width:100%;border-left:none;border-top:1px solid var(--line);box-shadow:none;min-height:300px}
+  #sheet-container{width:100%;min-height:440px;overflow:visible}
+  #sheet-img{width:calc(100vw - 28px);max-width:calc(100vw - 28px);height:auto;max-height:none}
+  #prompt-bar .text{overflow-wrap:anywhere}
+  #done-btn{margin-left:0}
+}
+</style>
+</head>
+<body>
+
+<!-- TOP BAR: segment dots + done -->
+<div id="topbar">
+  <h1 id="proj-title">Clip Picker</h1>
+  <div id="seg-dots"></div>
+  <button id="done-btn" onclick="finish()">✓ 完成</button>
+</div>
+
+<!-- MAIN -->
+<div id="main">
+  <div id="left">
+    <div id="seg-info"><div class="slug"></div><div class="narration"></div></div>
+    <div id="controls">
+      <label>剧集</label>
+      <select id="ep-select" onchange="onEpisodeChange()"></select>
+      <div id="page-nav">
+        <button onclick="prevPage()">◀</button>
+        <span id="page-label">0 / 0</span>
+        <button onclick="nextPage()">▶</button>
+      </div>
+      <span id="sel-hint">点击起点格子，再点终点格子完成选择</span>
+    </div>
+    <div id="sheet-container" style="position:relative">
+      <img id="sheet-img" src="" alt="Contact sheet" draggable="false">
+      <div id="empty-sheet">没有找到这一页的 contact sheet</div>
+    </div>
+    <div id="prompt-bar">
+      <div class="label">搜索提示</div>
+      <div class="text" id="prompt-text"></div>
+    </div>
+  </div>
+
+  <div id="right">
+    <h3>已选片段</h3>
+    <div id="parts-list"></div>
+    <button id="add-part-btn" onclick="startNewPart()">＋ 添加片段</button>
+    <div id="summary">
+      <div class="duration-card">
+        <div class="duration-label"><span class="duration-dot selected"></span><span>已选总时长</span></div>
+        <div class="duration-track"><div id="sum-clip-bar" class="duration-fill selected"></div></div>
+      </div>
+      <div class="duration-card">
+        <div class="duration-label"><span class="duration-dot narration"></span><span>旁白时长</span></div>
+        <div class="duration-track"><div id="sum-narr-bar" class="duration-fill narration"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ── state ──
+let CONFIG = null;
+let currentSegIdx = 0;
+let currentPage = 0;
+let selecting = null;       // {startPage, startRow, startCol} between two clicks
+let pendingPartLabel = 1;
+
+// ── init ──
+async function init() {
+  const r = await fetch("/api/config");
+  CONFIG = await r.json();
+  if (!r.ok || CONFIG.ok === false) {
+    toast(CONFIG.error || "配置加载失败");
+    return;
+  }
+  CONFIG.selections = CONFIG.selections || {};
+  CONFIG.segments = CONFIG.segments || [];
+  document.getElementById("proj-title").textContent = CONFIG.title;
+  renderSegDots();
+  navigateTo(0);
+}
+
+// ── segment dots ──
+function renderSegDots() {
+  const container = document.getElementById("seg-dots");
+  container.innerHTML = "";
+  CONFIG.segments.forEach((seg, i) => {
+    if (i > 0) {
+      const arrow = document.createElement("span");
+      arrow.className = "progress-arrow";
+      arrow.textContent = "▸";
+      container.appendChild(arrow);
+    }
+    const dot = document.createElement("div");
+    dot.className = "seg-dot";
+    dot.textContent = i + 1;
+    dot.title = seg.slug;
+    dot.onclick = () => navigateTo(i);
+    // Check if has selections
+    const sel = CONFIG.selections[seg.id];
+    if (sel && sel.parts && sel.parts.length > 0) {
+      dot.classList.add("has-parts");
+    }
+    if (i === currentSegIdx) dot.classList.add("active");
+    dot.id = "dot-" + i;
+    container.appendChild(dot);
+  });
+  updateDoneBtn();
+}
+
+function updateSegDots() {
+  CONFIG.segments.forEach((seg, i) => {
+    const dot = document.getElementById("dot-" + i);
+    if (!dot) return;
+    dot.classList.remove("active", "done", "has-parts");
+    const sel = CONFIG.selections[seg.id];
+    if (sel && sel.parts && sel.parts.length > 0) {
+      dot.classList.add("has-parts");
+      // Check if total clip >= narration
+      const totalClip = sel.parts.reduce((s, p) => s + (p.end - p.start), 0);
+      if (totalClip >= seg.narration_duration - 2) dot.classList.add("done");
+    }
+    if (i === currentSegIdx) dot.classList.add("active");
+  });
+}
+
+function updateDoneBtn() {
+  const allDone = CONFIG.segments.every(seg => {
+    const sel = CONFIG.selections[seg.id];
+    if (!sel || !sel.parts || sel.parts.length === 0) return false;
+    const total = sel.parts.reduce((s, p) => s + (p.end - p.start), 0);
+    return total >= seg.narration_duration - 2;
+  });
+  document.getElementById("done-btn").classList.toggle("ready", allDone);
+}
+
+// ── navigation ──
+function navigateTo(idx) {
+  if (!CONFIG.segments.length) {
+    document.querySelector("#seg-info .slug").textContent = "没有 segment";
+    document.querySelector("#seg-info .narration").textContent = "请检查 segments.json";
+    return;
+  }
+  currentSegIdx = idx;
+  const seg = CONFIG.segments[idx];
+
+  // Load saved episode if any
+  const sel = CONFIG.selections[seg.id];
+  const ep = normalizeEpisodeId((sel && sel.episode) || seg.suggested_episode);
+  const firstPart = sel && sel.parts && sel.parts[0];
+  const epInfo = CONFIG.episodes[ep];
+  const restorePageSecs = Number(epInfo && epInfo.page_secs) || Number(CONFIG.page_secs) || 1;
+  currentPage = firstPart ? Math.floor(Number(firstPart.start || 0) / restorePageSecs) : 0;
+
+  // Update episode select
+  const selEl = document.getElementById("ep-select");
+  selEl.innerHTML = "";
+  const episodeList = CONFIG.episode_list.length ? CONFIG.episode_list : [ep].filter(Boolean);
+  episodeList.forEach(e => {
+    const opt = document.createElement("option");
+    opt.value = e;
+    const epInfo = CONFIG.episodes[e];
+    opt.textContent = epInfo && epInfo.title ? epInfo.title : "第" + e + "集";
+    if (e === ep) opt.selected = true;
+    selEl.appendChild(opt);
+  });
+
+  // Info
+  document.querySelector("#seg-info .slug").textContent = seg.slug;
+  document.querySelector("#seg-info .narration").textContent = seg.narration;
+  document.getElementById("prompt-text").textContent = seg.search_hint || "";
+
+  renderParts();
+  renderSheet();
+  updateSegDots();
+  document.getElementById("sel-hint").style.display = "none";
+  selecting = null;
+}
+
+function onEpisodeChange() {
+  const seg = CONFIG.segments[currentSegIdx];
+  const ep = document.getElementById("ep-select").value;
+  if (!CONFIG.selections[seg.id]) CONFIG.selections[seg.id] = { parts: [] };
+  CONFIG.selections[seg.id].episode = ep;
+  currentPage = 0;
+  renderSheet();
+  autoSave();
+}
+
+function currentSegment() {
+  return CONFIG.segments[currentSegIdx];
+}
+
+function selectedEpisode() {
+  const seg = currentSegment();
+  const sel = CONFIG.selections[seg.id];
+  return normalizeEpisodeId((sel && sel.episode) || seg.suggested_episode);
+}
+
+function normalizeEpisodeId(ep) {
+  if (ep === undefined || ep === null || ep === "") return CONFIG.episode_list[0];
+  const candidate = String(ep);
+  const normalized = /^\d+$/.test(candidate) ? candidate.padStart(2, "0") : candidate;
+  if (CONFIG.episodes[normalized]) return normalized;
+  return CONFIG.episode_list[0] || normalized;
+}
+
+function episodeInfo(ep = selectedEpisode()) {
+  return CONFIG.episodes[ep] || null;
+}
+
+function pageSeconds(epInfo = episodeInfo()) {
+  return Number(epInfo && epInfo.page_secs) || Number(CONFIG.page_secs) || 1;
+}
+
+function cellSeconds(epInfo = episodeInfo()) {
+  return Number(epInfo && epInfo.secs_per_cell) || Number(CONFIG.secs_per_cell) || 1;
+}
+
+// ── contact sheet ──
+function renderSheet() {
+  const seg = currentSegment();
+  const sel = CONFIG.selections[seg.id];
+  const ep = selectedEpisode();
+  const epInfo = episodeInfo(ep);
+  const img = document.getElementById("sheet-img");
+  const empty = document.getElementById("empty-sheet");
+  if (!epInfo) {
+    img.removeAttribute("src");
+    empty.textContent = `没有找到第 ${ep || "?"} 集视频或 contact sheet`;
+    empty.style.display = "block";
+    document.getElementById("page-label").textContent = "第 0 / 0 页";
+    drawOverlays();
+    return;
+  }
+
+  const maxPages = Math.max(1, epInfo.pages || Math.ceil(epInfo.duration / pageSeconds(epInfo)));
+  currentPage = Math.min(currentPage, maxPages - 1);
+
+  // Build URL
+  const pageStr = String(currentPage);
+  const sheet = epInfo.sheets ? epInfo.sheets[pageStr] : null;
+  if (sheet) {
+    img.style.visibility = "visible";
+    empty.style.display = "none";
+    img.src = "/contact_sheets/" + encodeURIComponent(sheet);
+  } else {
+    img.removeAttribute("src");
+    img.style.visibility = "hidden";
+    empty.textContent = `没有找到第 ${currentPage + 1} 页 contact sheet`;
+    empty.style.display = "block";
+  }
+  const pageStart = currentPage * pageSeconds(epInfo);
+  const pageEnd = Math.min((currentPage + 1) * pageSeconds(epInfo), epInfo.duration || (currentPage + 1) * pageSeconds(epInfo));
+  document.getElementById("page-label").textContent =
+    `第 ${currentPage + 1} / ${maxPages} 页  (${fmtTime(pageStart)} – ${fmtTime(pageEnd)})`;
+
+  document.querySelector("#page-nav button:first-child").disabled = currentPage <= 0;
+  document.querySelector("#page-nav button:last-child").disabled = currentPage >= maxPages - 1;
+
+  // Clear overlay
+  img.onload = () => drawOverlays();
+  img.onerror = () => {
+    img.style.visibility = "hidden";
+    empty.textContent = "contact sheet 图片加载失败";
+    empty.style.display = "block";
+    drawOverlays();
+  };
+  drawOverlays();
+}
+
+function prevPage() {
+  if (currentPage > 0) { currentPage--; renderSheet(); }
+}
+function nextPage() {
+  const epInfo = episodeInfo();
+  if (!epInfo) return;
+  const maxPages = Math.max(1, epInfo.pages || Math.ceil(epInfo.duration / pageSeconds(epInfo)));
+  if (currentPage < maxPages - 1) { currentPage++; renderSheet(); }
+}
+
+// ── click-to-select ──
+function getCellFromEvent(e) {
+  const img = document.getElementById("sheet-img");
+  const rect = img.getBoundingClientRect();
+  if (!rect.width || !rect.height || img.style.visibility === "hidden") return null;
+  const x = e.clientX - rect.left;
+  const y = e.clientY - rect.top;
+  const cellW = rect.width / CONFIG.sheet_cols;
+  const cellH = rect.height / CONFIG.sheet_rows;
+  const col = Math.floor(x / cellW);
+  const row = Math.floor(y / cellH);
+  if (col < 0 || col >= CONFIG.sheet_cols || row < 0 || row >= CONFIG.sheet_rows) return null;
+  return { row, col };
+}
+
+function cellToSeconds(row, col) {
+  return cellToSecondsAtPage(currentPage, row, col);
+}
+
+function cellToSecondsAtPage(page, row, col) {
+  return page * pageSeconds() + (row * CONFIG.sheet_cols + col) * cellSeconds();
+}
+
+document.getElementById("sheet-img").addEventListener("click", function(e) {
+  const cell = getCellFromEvent(e);
+  if (!cell) return;
+
+  if (!selecting) {
+    // Start selection
+    selecting = { startPage: currentPage, startRow: cell.row, startCol: cell.col };
+    document.getElementById("sel-hint").style.display = "inline";
+  } else {
+    // Finish selection
+    const startSec = cellToSecondsAtPage(selecting.startPage, selecting.startRow, selecting.startCol);
+    const endSec = cellToSecondsAtPage(currentPage, cell.row, cell.col) + cellSeconds();
+    const s = Math.min(startSec, endSec);
+    const e = Math.max(startSec, endSec);
+    addPart(s, e);
+    selecting = null;
+    document.getElementById("sel-hint").style.display = "none";
+  }
+  drawOverlays();
+});
+
+// ── parts ──
+function addPart(startSec, endSec) {
+  const seg = CONFIG.segments[currentSegIdx];
+  const sid = seg.id;
+  if (!CONFIG.selections[sid]) CONFIG.selections[sid] = { episode: seg.suggested_episode, parts: [] };
+  const sel = CONFIG.selections[sid];
+  const epInfo = episodeInfo(sel.episode);
+  const boundedStart = Math.max(0, startSec);
+  const boundedEnd = Math.min(Math.max(endSec, boundedStart), Number(epInfo && epInfo.duration) || endSec);
+  if (boundedEnd <= boundedStart) {
+    toast("选择范围无效");
+    return;
+  }
+  if (!sel.parts) sel.parts = [];
+  const label = "part" + (sel.parts.length + 1);
+  sel.parts.push({ start: roundSeconds(boundedStart), end: roundSeconds(boundedEnd), label: label });
+  renderParts();
+  updateSegDots();
+  updateDoneBtn();
+  autoSave();
+  toast(`已添加: ${fmtTime(boundedStart)} – ${fmtTime(boundedEnd)}  (${(boundedEnd-boundedStart).toFixed(1)}s)`);
+}
+
+function removePart(idx) {
+  const seg = CONFIG.segments[currentSegIdx];
+  const sid = seg.id;
+  if (!CONFIG.selections[sid]) return;
+  CONFIG.selections[sid].parts.splice(idx, 1);
+  renderParts();
+  updateSegDots();
+  updateDoneBtn();
+  autoSave();
+}
+
+function renderParts() {
+  const seg = CONFIG.segments[currentSegIdx];
+  const sid = seg.id;
+  const sel = CONFIG.selections[sid];
+  const parts = (sel && sel.parts) ? sel.parts : [];
+
+  const list = document.getElementById("parts-list");
+  list.innerHTML = parts.map((p, i) => `
+    <div class="part-item">
+      <span class="remove" onclick="removePart(${i})">×</span>
+      <div class="range">${fmtTime(p.start)} – ${fmtTime(p.end)}</div>
+      <div class="info">${escapeHtml(p.label || ("part" + (i + 1)))} · ${(Number(p.end) - Number(p.start)).toFixed(1)}s</div>
+    </div>
+  `).join("");
+
+  const totalClip = parts.reduce((s, p) => s + Math.max(0, Number(p.end) - Number(p.start)), 0);
+  const narDur = Number(seg.narration_duration) || 0;
+  renderDurationBars(parts, totalClip, narDur);
+}
+
+function renderDurationBars(parts, totalClip, narDur) {
+  const scale = Math.max(totalClip, narDur, 1);
+  const clipBar = document.getElementById("sum-clip-bar");
+  const narrBar = document.getElementById("sum-narr-bar");
+  clipBar.innerHTML = "";
+  clipBar.style.width = `${Math.min(100, (totalClip / scale) * 100)}%`;
+  narrBar.style.width = `${Math.min(100, (narDur / scale) * 100)}%`;
+
+  if (!parts.length || totalClip <= 0) {
+    const empty = document.createElement("div");
+    empty.className = "duration-segment";
+    empty.style.width = "0%";
+    clipBar.appendChild(empty);
+    return;
+  }
+  parts.forEach(part => {
+    const duration = Math.max(0, Number(part.end) - Number(part.start));
+    const segment = document.createElement("div");
+    segment.className = "duration-segment";
+    segment.style.width = `${(duration / totalClip) * 100}%`;
+    segment.title = `${part.label || "part"} · ${fmtTime(duration)}`;
+    clipBar.appendChild(segment);
+  });
+}
+
+function startNewPart() {
+  selecting = null;
+  document.getElementById("sel-hint").style.display = "none";
+  toast("在 contact sheet 上点击起点和终点来选择新片段");
+}
+
+// ── overlays ──
+function drawOverlays() {
+  // Remove old overlays
+  document.querySelectorAll(".selection-box,.cell-highlight").forEach(el => el.remove());
+
+  const seg = CONFIG.segments[currentSegIdx];
+  const sel = CONFIG.selections[seg.id];
+  const parts = (sel && sel.parts) ? sel.parts : [];
+
+  const img = document.getElementById("sheet-img");
+  const rect = img.getBoundingClientRect();
+  if (!rect.width || !rect.height || img.style.visibility === "hidden") return;
+  const container = document.getElementById("sheet-container");
+  const cellW = rect.width / CONFIG.sheet_cols;
+  const cellH = rect.height / CONFIG.sheet_rows;
+
+  // Highlight selected parts
+  parts.forEach(part => {
+    highlightRange(part.start, part.end, cellW, cellH, container, img);
+  });
+
+  // Show current selection
+  if (selecting) {
+    const sc = selecting;
+    if (sc.startPage !== currentPage) return;
+    const div = document.createElement("div");
+    div.className = "cell-highlight";
+    div.style.left = (img.offsetLeft + sc.startCol * cellW) + "px";
+    div.style.top = (img.offsetTop + sc.startRow * cellH) + "px";
+    div.style.width = cellW + "px";
+    div.style.height = cellH + "px";
+    container.appendChild(div);
+  }
+}
+
+function highlightRange(startSec, endSec, cellW, cellH, container, img) {
+  const pageStart = currentPage * pageSeconds();
+  const pageEnd = pageStart + pageSeconds();
+  const clipStart = Math.max(Number(startSec), pageStart);
+  const clipEnd = Math.min(Number(endSec), pageEnd);
+  if (clipStart >= clipEnd) return;
+
+  const startIdx = Math.floor((clipStart - pageStart) / cellSeconds());
+  const endIdx = Math.floor(((clipEnd - pageStart) - 0.001) / cellSeconds());
+  const startRow = Math.floor(startIdx / CONFIG.sheet_cols);
+  const endRow = Math.floor(endIdx / CONFIG.sheet_cols);
+
+  for (let row = startRow; row <= endRow; row++) {
+    const rowStartCol = row === startRow ? startIdx % CONFIG.sheet_cols : 0;
+    const rowEndCol = row === endRow ? endIdx % CONFIG.sheet_cols : CONFIG.sheet_cols - 1;
+    const div = document.createElement("div");
+    div.className = "selection-box";
+    div.style.left = (img.offsetLeft + rowStartCol * cellW) + "px";
+    div.style.top = (img.offsetTop + row * cellH) + "px";
+    div.style.width = ((rowEndCol - rowStartCol + 1) * cellW) + "px";
+    div.style.height = cellH + "px";
+    container.appendChild(div);
+  }
+}
+
+// ── helpers ──
+function fmtTime(s) {
+  s = Math.max(0, Number(s) || 0);
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ":" + String(sec).padStart(2, "0");
+}
+
+function roundSeconds(s) {
+  return Math.round((Number(s) || 0) * 1000) / 1000;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, ch => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  setTimeout(() => el.classList.remove("show"), 2000);
+}
+
+async function autoSave() {
+  try {
+    const r = await fetch("/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(CONFIG.selections),
+    });
+    if (!r.ok) toast("保存失败");
+  } catch {
+    toast("保存失败");
+  }
+}
+
+async function finish() {
+  const allDone = CONFIG.segments.every(seg => {
+    const sel = CONFIG.selections[seg.id];
+    if (!sel || !sel.parts || sel.parts.length === 0) return false;
+    const total = sel.parts.reduce((s, p) => s + (p.end - p.start), 0);
+    return total >= seg.narration_duration - 2;
+  });
+  if (!allDone) {
+    if (!confirm("还有 segment 未完成，确定要结束吗？")) return;
+  }
+  await autoSave();
+  if (confirm("要现在提取所有 clip 吗？")) {
+    toast("正在提取 clip...");
+    const r = await fetch("/api/extract", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ selections: CONFIG.selections }),
+    });
+    const data = await r.json();
+    const okCount = (data.results || []).filter(x => x.ok).length;
+    const failCount = (data.results || []).filter(x => x.ok === false).length;
+    toast(failCount ? `提取完成：${okCount} 成功，${failCount} 失败` : "提取完成！" + okCount + " 个 clip");
+  }
+}
+
+window.addEventListener("resize", () => drawOverlays());
+
+// Keyboard nav
+document.addEventListener("keydown", e => {
+  if (e.key === "ArrowLeft" && e.altKey) prevPage();
+  if (e.key === "ArrowRight" && e.altKey) nextPage();
+  if (e.key === "Escape") { selecting = null; document.getElementById("sel-hint").style.display = "none"; drawOverlays(); }
+});
+
+// Keyboard segment nav
+document.addEventListener("keydown", e => {
+  if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+  if (e.key === "n" && e.shiftKey) {
+    if (currentSegIdx < CONFIG.segments.length - 1) navigateTo(currentSegIdx + 1);
+  }
+  if (e.key === "p" && e.shiftKey) {
+    if (currentSegIdx > 0) navigateTo(currentSegIdx - 1);
+  }
+});
+
+init();
+</script>
+</body>
+</html>

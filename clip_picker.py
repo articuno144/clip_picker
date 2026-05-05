@@ -77,6 +77,7 @@ def runtime_settings(cfg: dict) -> dict:
     return {
         "episode_dir": cfg_path(cfg, "episode_dir", PROJECT_ROOT / "videos"),
         "sheet_dir": cfg_path(cfg, "contact_sheet_dir", PROJECT_ROOT / "contact_sheets"),
+        "subtitle_dir": cfg_path(cfg, "subtitle_dir", PROJECT_ROOT / "subs"),
         "output_dir": cfg_path(cfg, "output_dir", PROJECT_ROOT / "assets" / "shots"),
         "cols": cols,
         "rows": rows,
@@ -145,6 +146,68 @@ def discover_sheets(sheet_dir: Path, episode: dict) -> dict:
                         pass
                     break
     return sheets
+
+def parse_subtitle_time(value: str) -> float:
+    m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", value.strip())
+    if not m:
+        raise ValueError(f"Invalid subtitle timestamp: {value}")
+    hours, minutes, seconds, millis = m.groups()
+    return int(hours) * 3600 + int(minutes) * 60 + int(seconds) + int(millis[:3].ljust(3, "0")) / 1000
+
+def parse_srt(path: Path) -> list[dict]:
+    text = path.read_text(encoding="utf-8-sig", errors="replace")
+    cues = []
+    blocks = re.split(r"\n\s*\n", text.replace("\r\n", "\n").replace("\r", "\n").strip())
+    for block in blocks:
+        lines = [line.strip() for line in block.split("\n") if line.strip()]
+        if not lines:
+            continue
+        time_line_idx = next((i for i, line in enumerate(lines) if "-->" in line), None)
+        if time_line_idx is None:
+            continue
+        start_raw, end_raw = [part.strip().split()[0] for part in lines[time_line_idx].split("-->", 1)]
+        cue_text = " ".join(lines[time_line_idx + 1:]).strip()
+        if not cue_text:
+            continue
+        try:
+            cues.append({
+                "start": parse_subtitle_time(start_raw),
+                "end": parse_subtitle_time(end_raw),
+                "text": re.sub(r"<[^>]+>", "", cue_text),
+            })
+        except ValueError:
+            continue
+    return cues
+
+def discover_subtitle_file(cfg: dict, settings: dict, episode: dict) -> Path | None:
+    configured = cfg.get("subtitle_file")
+    if isinstance(configured, dict):
+        value = configured.get(episode["id"])
+        if value:
+            path = Path(value).expanduser()
+            return path if path.is_absolute() else PROJECT_ROOT / path
+    elif isinstance(configured, str):
+        path = Path(configured).expanduser()
+        return path if path.is_absolute() else PROJECT_ROOT / path
+
+    subtitle_dir = settings["subtitle_dir"]
+    ep_id = episode["id"]
+    stem = safe_label(Path(episode["file"]).stem)
+    prefixes = [f"ep{ep_id}", ep_id, stem]
+    if subtitle_dir.exists():
+        for f in sorted(subtitle_dir.iterdir(), key=lambda p: p.name.lower()):
+            if not f.is_file() or f.suffix.lower() != ".srt":
+                continue
+            lower_stem = f.stem.lower()
+            if any(lower_stem == prefix.lower() or lower_stem.startswith((prefix + "_").lower()) or lower_stem.startswith((prefix + "-").lower()) for prefix in prefixes):
+                return f
+    return None
+
+def episode_subtitles(cfg: dict, settings: dict, episode: dict) -> list[dict]:
+    subtitle_file = discover_subtitle_file(cfg, settings, episode)
+    if not subtitle_file or not subtitle_file.exists():
+        return []
+    return parse_srt(subtitle_file)
 
 def find_episode_record(episode_dir: Path, cfg: dict, ep: str):
     ep_norm = str(ep).zfill(2) if str(ep).isdigit() else str(ep)
@@ -394,6 +457,7 @@ def api_config():
             "page_secs": timing["page_secs"],
             "secs_per_cell": timing["secs_per_cell"],
             "sheets": {str(k): v for k, v in sheets.items()},
+            "subtitles": episode_subtitles(cfg, settings, episode),
         }
     # Load existing selections
     sels = load_selections()

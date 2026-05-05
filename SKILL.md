@@ -23,6 +23,7 @@ The target project needs a `segments.json` with:
 
 - `episode_dir`: folder containing source videos
 - `contact_sheet_dir`: folder containing contact sheet images
+- `subtitle_dir`: optional folder containing SRT files
 - `output_dir`: where extracted clips should be written
 - `segments`: segment list with `id`, `slug`, `narration`, `suggested_episode`, and `narration_duration`
 
@@ -38,8 +39,9 @@ Contact sheets should be named with one of these patterns:
 2. Use the language selector if needed; English is the default UI language.
 3. Select a segment and video.
 4. Click a start cell, navigate pages if needed, then click an end cell.
-5. Add as many parts as the segment needs.
-6. Choose export type:
+5. Hover over cells to inspect nearby SRT subtitles when available; previous/next cell subtitles are greyed and current-cell subtitles are emphasized.
+6. Add as many parts as the segment needs.
+7. Choose export type:
    - `selections.json`: saves and downloads selections.
    - `FCPXML`: saves selections, extracts clips, runs `prepare.py`, then downloads the FCPXML.
 

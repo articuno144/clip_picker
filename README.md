@@ -45,6 +45,7 @@ clip-picker/
   "title": "Project title",
   "episode_dir": "videos",
   "contact_sheet_dir": "contact_sheets",
+  "subtitle_dir": "subs",
   "output_dir": "assets/shots",
   "contact_sheet_cols": 8,
   "contact_sheet_rows": 8,
@@ -66,6 +67,16 @@ clip-picker/
 `seconds_per_frame` is the fallback timing when no source duration is available. When source videos and contact sheets are present, the app derives each page's duration as `video_duration / number_of_contact_sheet_pages`, so it works with contact sheets generated at any consistent sampling density.
 
 `title` is read from `segments.json` and displayed in the top bar; it is not hardcoded into the app.
+
+## Optional subtitles
+
+If SRT subtitles are available, hovering a contact-sheet cell shows nearby subtitle context above that cell:
+
+- previous cell subtitles are greyed
+- current cell subtitles are emphasized
+- next cell subtitles are greyed
+
+Configure `subtitle_dir` in `segments.json`, or set `subtitle_file` to a single SRT path or an object mapping video ids to SRT paths. Auto-discovery matches files named like `ep01.srt`, `01.srt`, or `<safe_video_stem>.srt`.
 
 ## Keyboard shortcuts
 

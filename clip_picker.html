@@ -126,11 +126,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <h1 id="proj-title">Clip Picker</h1>
   <div id="seg-dots"></div>
   <div id="export-controls">
-    <select id="export-type" aria-label="导出格式">
+    <select id="lang-select" aria-label="Language" onchange="setLanguage(this.value)">
+      <option value="en" selected>English</option>
+      <option value="zh">中文</option>
+    </select>
+    <select id="export-type" aria-label="Export format">
       <option value="selections">selections.json</option>
       <option value="fcpxml">FCPXML</option>
     </select>
-    <button id="export-btn" onclick="exportSelection()">↗ 导出</button>
+    <button id="export-btn" onclick="exportSelection()">↗ Export</button>
   </div>
 </div>
 
@@ -139,41 +143,41 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <div id="left">
     <div id="seg-info"><div class="slug"></div><div class="narration"></div></div>
     <div id="controls">
-      <label>剧集</label>
+      <label data-i18n="episode">Video</label>
       <select id="ep-select" onchange="onEpisodeChange()"></select>
       <div id="page-nav">
         <button onclick="prevPage()">◀</button>
         <span id="page-label">0 / 0</span>
         <button onclick="nextPage()">▶</button>
       </div>
-      <span id="sel-hint">点击起点格子，再点终点格子完成选择</span>
+      <span id="sel-hint">Click a start cell, then an end cell to select a range</span>
     </div>
     <div id="sheet-container" style="position:relative">
       <img id="sheet-img" src="" alt="Contact sheet" draggable="false">
-      <div id="empty-sheet">没有找到这一页的 contact sheet</div>
+      <div id="empty-sheet">No contact sheet found for this page</div>
     </div>
     <div id="prompt-bar">
-      <div class="label">搜索提示</div>
+      <div class="label" data-i18n="searchHint">Search hint</div>
       <div class="text" id="prompt-text"></div>
     </div>
   </div>
 
   <div id="right">
-    <h3>已选片段</h3>
+    <h3 data-i18n="selectedClips">Selected clips</h3>
     <div id="parts-list"></div>
-    <button id="add-part-btn" onclick="startNewPart()">＋ 添加片段</button>
+    <button id="add-part-btn" onclick="startNewPart()">＋ Add clip</button>
     <div id="summary">
       <div class="duration-card">
-        <div class="duration-label"><span class="duration-dot selected"></span><span>已选总时长</span></div>
+        <div class="duration-label"><span class="duration-dot selected"></span><span data-i18n="selectedDuration">Selected duration</span></div>
         <div class="duration-track"><div id="sum-clip-bar" class="duration-fill selected"></div></div>
       </div>
       <div class="duration-card">
-        <div class="duration-label"><span class="duration-dot narration"></span><span>旁白时长</span></div>
+        <div class="duration-label"><span class="duration-dot narration"></span><span data-i18n="narrationDuration">Narration duration</span></div>
         <div class="duration-track"><div id="sum-narr-bar" class="duration-fill narration"></div></div>
       </div>
     </div>
     <div id="export-progress">
-      <div class="label"><span id="export-step">准备导出</span><span id="export-percent">0%</span></div>
+      <div class="label"><span id="export-step">Ready to export</span><span id="export-percent">0%</span></div>
       <div id="export-track"><div id="export-fill"></div></div>
       <div id="export-message"></div>
     </div>
@@ -189,13 +193,116 @@ let currentSegIdx = 0;
 let currentPage = 0;
 let selecting = null;       // {startPage, startRow, startCol} between two clicks
 let pendingPartLabel = 1;
+let currentLang = "en";
+
+const I18N = {
+  en: {
+    export: "↗ Export",
+    episode: "Video",
+    selectHint: "Click a start cell, then an end cell to select a range",
+    noSheetPage: "No contact sheet found for this page",
+    searchHint: "Search hint",
+    selectedClips: "Selected clips",
+    addClip: "＋ Add clip",
+    selectedDuration: "Selected duration",
+    narrationDuration: "Narration duration",
+    readyExport: "Ready to export",
+    configLoadFailed: "Failed to load config",
+    noSegment: "No segment",
+    checkSegments: "Check segments.json",
+    missingEpisode: ep => `No video or contact sheet found for ${ep || "?"}`,
+    zeroPages: "Page 0 / 0",
+    missingPage: page => `No contact sheet found for page ${page}`,
+    imageLoadFailed: "Contact sheet image failed to load",
+    invalidRange: "Invalid selection range",
+    added: (start, end, dur) => `Added: ${start} – ${end} (${dur}s)`,
+    newPartHint: "Click a start and end cell on the contact sheet to select a new clip",
+    saveFailed: "Save failed",
+    confirmIncomplete: "Some segments are incomplete. Export anyway?",
+    preparingExport: "Preparing export",
+    exportStartFailed: "Failed to start export",
+    failed: "Failed",
+    statusFailed: "Failed to read export status",
+    exporting: "Exporting",
+    exportDone: "Export complete",
+    exportFailed: "Export failed",
+    downloadFcpxml: "Download FCPXML",
+    downloadSelections: "Download selections.json",
+    exportedTo: (file, label, url) => `Exported to ${file} · <a href="${url}">${label}</a>`,
+    fcpxmlSteps: "Steps: save selections.json → extract clips → generate FCPXML",
+    selectionsSteps: "Steps: save selections.json",
+  },
+  zh: {
+    export: "↗ 导出",
+    episode: "剧集",
+    selectHint: "点击起点格子，再点终点格子完成选择",
+    noSheetPage: "没有找到这一页的 contact sheet",
+    searchHint: "搜索提示",
+    selectedClips: "已选片段",
+    addClip: "＋ 添加片段",
+    selectedDuration: "已选总时长",
+    narrationDuration: "旁白时长",
+    readyExport: "准备导出",
+    configLoadFailed: "配置加载失败",
+    noSegment: "没有 segment",
+    checkSegments: "请检查 segments.json",
+    missingEpisode: ep => `没有找到第 ${ep || "?"} 集视频或 contact sheet`,
+    zeroPages: "第 0 / 0 页",
+    missingPage: page => `没有找到第 ${page} 页 contact sheet`,
+    imageLoadFailed: "contact sheet 图片加载失败",
+    invalidRange: "选择范围无效",
+    added: (start, end, dur) => `已添加: ${start} – ${end} (${dur}s)`,
+    newPartHint: "在 contact sheet 上点击起点和终点来选择新片段",
+    saveFailed: "保存失败",
+    confirmIncomplete: "还有 segment 未完成，确定要导出吗？",
+    preparingExport: "准备导出",
+    exportStartFailed: "导出启动失败",
+    failed: "失败",
+    statusFailed: "导出状态读取失败",
+    exporting: "导出中",
+    exportDone: "导出完成",
+    exportFailed: "导出失败",
+    downloadFcpxml: "下载 FCPXML",
+    downloadSelections: "下载 selections.json",
+    exportedTo: (file, label, url) => `已导出到 ${file} · <a href="${url}">${label}</a>`,
+    fcpxmlSteps: "步骤：保存 selections.json → 提取 clips → 生成 FCPXML",
+    selectionsSteps: "步骤：保存 selections.json",
+  },
+};
+
+function t(key, ...args) {
+  const value = I18N[currentLang][key] || I18N.en[key] || key;
+  return typeof value === "function" ? value(...args) : value;
+}
+
+function setLanguage(lang) {
+  currentLang = I18N[lang] ? lang : "en";
+  localStorage.setItem("clipPickerLanguage", currentLang);
+  document.documentElement.lang = currentLang === "zh" ? "zh-CN" : "en";
+  document.getElementById("lang-select").value = currentLang;
+  document.getElementById("export-btn").textContent = t("export");
+  document.getElementById("sel-hint").textContent = t("selectHint");
+  document.getElementById("empty-sheet").textContent = t("noSheetPage");
+  document.getElementById("add-part-btn").textContent = t("addClip");
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    el.textContent = t(el.dataset.i18n);
+  });
+  if (!document.getElementById("export-progress").classList.contains("show")) {
+    document.getElementById("export-step").textContent = t("readyExport");
+  }
+  if (CONFIG) {
+    renderParts();
+    renderSheet();
+  }
+}
 
 // ── init ──
 async function init() {
+  setLanguage(localStorage.getItem("clipPickerLanguage") || "en");
   const r = await fetch("/api/config");
   CONFIG = await r.json();
   if (!r.ok || CONFIG.ok === false) {
-    toast(CONFIG.error || "配置加载失败");
+    toast(CONFIG.error || t("configLoadFailed"));
     return;
   }
   CONFIG.selections = CONFIG.selections || {};
@@ -262,8 +369,8 @@ function updateDoneBtn() {
 // ── navigation ──
 function navigateTo(idx) {
   if (!CONFIG.segments.length) {
-    document.querySelector("#seg-info .slug").textContent = "没有 segment";
-    document.querySelector("#seg-info .narration").textContent = "请检查 segments.json";
+    document.querySelector("#seg-info .slug").textContent = t("noSegment");
+    document.querySelector("#seg-info .narration").textContent = t("checkSegments");
     return;
   }
   currentSegIdx = idx;
@@ -285,7 +392,7 @@ function navigateTo(idx) {
     const opt = document.createElement("option");
     opt.value = e;
     const epInfo = CONFIG.episodes[e];
-    opt.textContent = epInfo && epInfo.title ? epInfo.title : "第" + e + "集";
+    opt.textContent = epInfo && epInfo.title ? epInfo.title : e;
     if (e === ep) opt.selected = true;
     selEl.appendChild(opt);
   });
@@ -352,9 +459,9 @@ function renderSheet() {
   const empty = document.getElementById("empty-sheet");
   if (!epInfo) {
     img.removeAttribute("src");
-    empty.textContent = `没有找到第 ${ep || "?"} 集视频或 contact sheet`;
+    empty.textContent = t("missingEpisode", ep);
     empty.style.display = "block";
-    document.getElementById("page-label").textContent = "第 0 / 0 页";
+    document.getElementById("page-label").textContent = t("zeroPages");
     drawOverlays();
     return;
   }
@@ -372,13 +479,13 @@ function renderSheet() {
   } else {
     img.removeAttribute("src");
     img.style.visibility = "hidden";
-    empty.textContent = `没有找到第 ${currentPage + 1} 页 contact sheet`;
+    empty.textContent = t("missingPage", currentPage + 1);
     empty.style.display = "block";
   }
   const pageStart = currentPage * pageSeconds(epInfo);
   const pageEnd = Math.min((currentPage + 1) * pageSeconds(epInfo), epInfo.duration || (currentPage + 1) * pageSeconds(epInfo));
   document.getElementById("page-label").textContent =
-    `第 ${currentPage + 1} / ${maxPages} 页  (${fmtTime(pageStart)} – ${fmtTime(pageEnd)})`;
+    `${currentPage + 1} / ${maxPages}  (${fmtTime(pageStart)} – ${fmtTime(pageEnd)})`;
 
   document.querySelector("#page-nav button:first-child").disabled = currentPage <= 0;
   document.querySelector("#page-nav button:last-child").disabled = currentPage >= maxPages - 1;
@@ -387,7 +494,7 @@ function renderSheet() {
   img.onload = () => drawOverlays();
   img.onerror = () => {
     img.style.visibility = "hidden";
-    empty.textContent = "contact sheet 图片加载失败";
+    empty.textContent = t("imageLoadFailed");
     empty.style.display = "block";
     drawOverlays();
   };
@@ -458,7 +565,7 @@ function addPart(startSec, endSec) {
   const boundedStart = Math.max(0, startSec);
   const boundedEnd = Math.min(Math.max(endSec, boundedStart), Number(epInfo && epInfo.duration) || endSec);
   if (boundedEnd <= boundedStart) {
-    toast("选择范围无效");
+    toast(t("invalidRange"));
     return;
   }
   if (!sel.parts) sel.parts = [];
@@ -468,7 +575,7 @@ function addPart(startSec, endSec) {
   updateSegDots();
   updateDoneBtn();
   autoSave();
-  toast(`已添加: ${fmtTime(boundedStart)} – ${fmtTime(boundedEnd)}  (${(boundedEnd-boundedStart).toFixed(1)}s)`);
+  toast(t("added", fmtTime(boundedStart), fmtTime(boundedEnd), (boundedEnd-boundedStart).toFixed(1)));
 }
 
 function removePart(idx) {
@@ -530,7 +637,7 @@ function renderDurationBars(parts, totalClip, narDur) {
 function startNewPart() {
   selecting = null;
   document.getElementById("sel-hint").style.display = "none";
-  toast("在 contact sheet 上点击起点和终点来选择新片段");
+  toast(t("newPartHint"));
 }
 
 // ── overlays ──
@@ -629,9 +736,9 @@ async function autoSave() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(CONFIG.selections),
     });
-    if (!r.ok) toast("保存失败");
+    if (!r.ok) toast(t("saveFailed"));
   } catch {
-    toast("保存失败");
+    toast(t("saveFailed"));
   }
 }
 
@@ -643,10 +750,10 @@ async function exportSelection() {
     return total >= seg.narration_duration - 2;
   });
   if (!allDone) {
-    if (!confirm("还有 segment 未完成，确定要导出吗？")) return;
+    if (!confirm(t("confirmIncomplete"))) return;
   }
   const exportType = document.getElementById("export-type").value;
-  showExportProgress("准备导出", 0, "");
+  showExportProgress(t("preparingExport"), 0, "");
   setExportBusy(true);
   try {
     const r = await fetch("/api/export", {
@@ -655,11 +762,11 @@ async function exportSelection() {
       body: JSON.stringify({ type: exportType, selections: CONFIG.selections }),
     });
     const data = await r.json();
-    if (!r.ok || !data.ok) throw new Error(data.error || "导出启动失败");
+    if (!r.ok || !data.ok) throw new Error(data.error || t("exportStartFailed"));
     pollExport(data.job_id);
   } catch (err) {
     setExportBusy(false);
-    showExportProgress("失败", 100, escapeHtml(err.message || String(err)));
+    showExportProgress(t("failed"), 100, escapeHtml(err.message || String(err)));
   }
 }
 
@@ -667,34 +774,44 @@ async function pollExport(jobId) {
   try {
     const r = await fetch("/api/export/" + encodeURIComponent(jobId));
     const job = await r.json();
-    if (!r.ok) throw new Error(job.error || "导出状态读取失败");
-    showExportProgress(job.step || "导出中", Number(job.progress) || 0, exportJobMessage(job));
+    if (!r.ok) throw new Error(job.error || t("statusFailed"));
+    showExportProgress(localizeJobStep(job.step) || t("exporting"), Number(job.progress) || 0, exportJobMessage(job));
     if (job.status === "done") {
       setExportBusy(false);
-      toast("导出完成");
+      toast(t("exportDone"));
       return;
     }
     if (job.status === "error") {
       setExportBusy(false);
-      toast("导出失败");
+      toast(t("exportFailed"));
       return;
     }
     setTimeout(() => pollExport(jobId), 800);
   } catch (err) {
     setExportBusy(false);
-    showExportProgress("失败", 100, escapeHtml(err.message || String(err)));
+    showExportProgress(t("failed"), 100, escapeHtml(err.message || String(err)));
   }
 }
 
 function exportJobMessage(job) {
   if (job.status === "done") {
-    const label = job.type === "fcpxml" ? "下载 FCPXML" : "下载 selections.json";
-    return `已导出到 ${escapeHtml(job.file || "")} · <a href="${job.download}">${label}</a>`;
+    const label = job.type === "fcpxml" ? t("downloadFcpxml") : t("downloadSelections");
+    return t("exportedTo", escapeHtml(job.file || ""), label, job.download);
   }
-  if (job.status === "error") return escapeHtml(job.error || "导出失败");
-  return job.type === "fcpxml"
-    ? "步骤：保存 selections.json → 提取 clips → 生成 FCPXML"
-    : "步骤：保存 selections.json";
+  if (job.status === "error") return escapeHtml(job.error || t("exportFailed"));
+  return job.type === "fcpxml" ? t("fcpxmlSteps") : t("selectionsSteps");
+}
+
+function localizeJobStep(step) {
+  const steps = {
+    "排队中": currentLang === "zh" ? "排队中" : "Queued",
+    "保存 selections.json": currentLang === "zh" ? "保存 selections.json" : "Saving selections.json",
+    "提取 clips": currentLang === "zh" ? "提取 clips" : "Extracting clips",
+    "生成 FCPXML": currentLang === "zh" ? "生成 FCPXML" : "Generating FCPXML",
+    "完成": currentLang === "zh" ? "完成" : "Complete",
+    "失败": currentLang === "zh" ? "失败" : "Failed",
+  };
+  return steps[step] || step;
 }
 
 function showExportProgress(step, progress, message) {

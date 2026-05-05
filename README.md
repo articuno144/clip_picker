@@ -2,6 +2,8 @@
 
 A visual contact-sheet-based clip range selector for building Bilibili commentary / video essay projects. Replaces the tedious "guess timestamp → extract clip → check → re-extract" loop with a direct-manipulation GUI.
 
+The UI defaults to English and includes a language selector for Chinese.
+
 ## What it does
 
 For each segment of your narration script, the app shows a contact sheet grid for any source video in a folder. You click two cells to select a start→end time range, including ranges that span multiple pages. Selected ranges appear on the right with visual duration bars against your pre-recorded narration timing. When all segments are done, click "完成" to batch-extract every clip with ffmpeg.

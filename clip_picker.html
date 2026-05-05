@@ -82,8 +82,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 .part-item .range{font-weight:800;color:#b45309;font-size:14px}
 .part-item .info{font-size:11px;color:var(--muted);margin-top:3px}
 .part-item .remove{float:right;color:var(--danger);cursor:pointer;font-size:18px;line-height:1}
-#add-part-btn{display:block;width:calc(100% - 28px);padding:11px;margin:8px 14px 16px;background:#eff6ff;color:var(--primary);border:1px dashed #93b4ef;border-radius:10px;cursor:pointer;font-size:13px;font-weight:800}
-#add-part-btn:hover{background:#dbeafe}
 #summary{padding:14px 18px;background:var(--panel-soft);border-top:1px solid var(--line);flex-shrink:0}
 .duration-card{margin-bottom:12px}
 .duration-card:last-child{margin-bottom:0}
@@ -165,7 +163,6 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   <div id="right">
     <h3 data-i18n="selectedClips">Selected clips</h3>
     <div id="parts-list"></div>
-    <button id="add-part-btn" onclick="startNewPart()">＋ Add clip</button>
     <div id="summary">
       <div class="duration-card">
         <div class="duration-label"><span class="duration-dot selected"></span><span data-i18n="selectedDuration">Selected duration</span></div>
@@ -203,7 +200,6 @@ const I18N = {
     noSheetPage: "No contact sheet found for this page",
     searchHint: "Search hint",
     selectedClips: "Selected clips",
-    addClip: "＋ Add clip",
     selectedDuration: "Selected duration",
     narrationDuration: "Narration duration",
     readyExport: "Ready to export",
@@ -216,7 +212,6 @@ const I18N = {
     imageLoadFailed: "Contact sheet image failed to load",
     invalidRange: "Invalid selection range",
     added: (start, end, dur) => `Added: ${start} – ${end} (${dur}s)`,
-    newPartHint: "Click a start and end cell on the contact sheet to select a new clip",
     saveFailed: "Save failed",
     confirmIncomplete: "Some segments are incomplete. Export anyway?",
     preparingExport: "Preparing export",
@@ -239,7 +234,6 @@ const I18N = {
     noSheetPage: "没有找到这一页的 contact sheet",
     searchHint: "搜索提示",
     selectedClips: "已选片段",
-    addClip: "＋ 添加片段",
     selectedDuration: "已选总时长",
     narrationDuration: "旁白时长",
     readyExport: "准备导出",
@@ -252,7 +246,6 @@ const I18N = {
     imageLoadFailed: "contact sheet 图片加载失败",
     invalidRange: "选择范围无效",
     added: (start, end, dur) => `已添加: ${start} – ${end} (${dur}s)`,
-    newPartHint: "在 contact sheet 上点击起点和终点来选择新片段",
     saveFailed: "保存失败",
     confirmIncomplete: "还有 segment 未完成，确定要导出吗？",
     preparingExport: "准备导出",
@@ -283,7 +276,6 @@ function setLanguage(lang) {
   document.getElementById("export-btn").textContent = t("export");
   document.getElementById("sel-hint").textContent = t("selectHint");
   document.getElementById("empty-sheet").textContent = t("noSheetPage");
-  document.getElementById("add-part-btn").textContent = t("addClip");
   document.querySelectorAll("[data-i18n]").forEach(el => {
     el.textContent = t(el.dataset.i18n);
   });
@@ -632,12 +624,6 @@ function renderDurationBars(parts, totalClip, narDur) {
     segment.title = `${part.label || "part"} · ${fmtTime(duration)}`;
     clipBar.appendChild(segment);
   });
-}
-
-function startNewPart() {
-  selecting = null;
-  document.getElementById("sel-hint").style.display = "none";
-  toast(t("newPartHint"));
 }
 
 // ── overlays ──

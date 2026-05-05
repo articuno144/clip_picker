@@ -6,7 +6,7 @@ The UI defaults to English and includes a language selector for Chinese.
 
 ## What it does
 
-For each segment of your narration script, the app shows a contact sheet grid for any source video in a folder. You click two cells to select a start→end time range, including ranges that span multiple pages. Selected ranges appear on the right with visual duration bars against your pre-recorded narration timing. When all segments are done, click "完成" to batch-extract every clip with ffmpeg.
+For each segment of your narration script, the app shows a contact sheet grid for any source video in a folder. You click two cells to select a start→end time range, including ranges that span multiple pages. Each completed two-click range is added automatically. Selected ranges appear on the right with visual duration bars against your pre-recorded narration timing. Use the export dropdown to save `selections.json` or extract clips and generate FCPXML.
 
 ## Quick start
 
@@ -65,6 +65,8 @@ clip-picker/
 
 `seconds_per_frame` is the fallback timing when no source duration is available. When source videos and contact sheets are present, the app derives each page's duration as `video_duration / number_of_contact_sheet_pages`, so it works with contact sheets generated at any consistent sampling density.
 
+`title` is read from `segments.json` and displayed in the top bar; it is not hardcoded into the app.
+
 ## Keyboard shortcuts
 
 | Key | Action |
@@ -109,7 +111,7 @@ done
 3. Edit `segments.json` with segment definitions, narration durations, and search hints
 4. Generate contact sheets for all episodes
 5. Run `python clip_picker.py` and visually select clip ranges
-6. Choose an export type and click `导出`
+6. Choose an export type and click `Export` / `导出`
    - `selections.json`: saves and downloads the current selections
    - `FCPXML`: saves selections, extracts clips, runs `prepare.py`, then downloads the generated FCPXML
 7. Import the FCPXML into DaVinci Resolve for final editing

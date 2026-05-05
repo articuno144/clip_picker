@@ -254,14 +254,11 @@ def coerce_part(part: dict) -> tuple[float, float] | None:
 def page_count_from_sheets_and_duration(sheets: dict, duration: float, page_secs: float) -> int:
     from_duration = int((duration + page_secs - 0.001) // page_secs) if duration > 0 else 0
     from_sheets = (max(sheets) + 1) if sheets else 0
-    return max(1, from_duration, from_sheets)
+    return max(1, from_duration or from_sheets)
 
 def episode_timing(sheets: dict, duration: float, settings: dict) -> dict:
     pages = page_count_from_sheets_and_duration(sheets, duration, settings["page_secs"])
-    if sheets and duration > 0:
-        page_secs = duration / pages
-    else:
-        page_secs = settings["page_secs"]
+    page_secs = settings["page_secs"]
     secs_per_cell = page_secs / (settings["cols"] * settings["rows"])
     return {
         "pages": pages,
@@ -294,6 +291,55 @@ def run_ffmpeg(cmd, timeout: int = 120):
         return False, (r.stderr or r.stdout or "ffmpeg failed")[-800:]
     except subprocess.TimeoutExpired:
         return False, "ffmpeg timed out"
+
+def video_output_prefix(path: Path) -> str:
+    return f"ep{episode_id_for_file(path)}" if re.match(r"^\d{1,3}(?:\D|$)", path.name) else safe_label(path.stem)
+
+def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
+    settings = runtime_settings(cfg)
+    settings["sheet_dir"].mkdir(parents=True, exist_ok=True)
+    results = []
+    for episode in discover_episode_records(settings["episode_dir"], cfg):
+        video_path = Path(episode["file"])
+        duration = get_episode_duration(video_path)
+        if duration <= 0:
+            results.append({"id": episode["id"], "file": str(video_path), "ok": False, "error": "Could not read duration"})
+            continue
+        pages = int((duration + settings["page_secs"] - 0.001) // settings["page_secs"])
+        prefix = video_output_prefix(video_path)
+        generated = 0
+        skipped = 0
+        for page in range(pages):
+            out = settings["sheet_dir"] / f"{prefix}_page{page}.jpg"
+            if out.exists() and not force:
+                skipped += 1
+                continue
+            cmd = [
+                "ffmpeg", "-y",
+                "-ss", str(page * settings["page_secs"]),
+                "-i", str(video_path),
+                "-t", str(settings["page_secs"]),
+                "-vf", (
+                    f"fps=1/{settings['secs']},scale=360:-1,"
+                    f"tile={settings['cols']}x{settings['rows']}:margin=2:padding=1:color=0x111111"
+                ),
+                "-frames:v", "1",
+                str(out),
+            ]
+            ok, error = run_ffmpeg(cmd, timeout=180)
+            if not ok:
+                results.append({"id": episode["id"], "page": page, "ok": False, "error": error})
+                continue
+            generated += 1
+        results.append({
+            "id": episode["id"],
+            "file": str(video_path),
+            "pages": pages,
+            "generated": generated,
+            "skipped": skipped,
+            "ok": True,
+        })
+    return results
 
 def set_job(job_id: str, **updates) -> None:
     with JOB_LOCK:
@@ -456,6 +502,7 @@ def api_config():
             "pages": timing["pages"],
             "page_secs": timing["page_secs"],
             "secs_per_cell": timing["secs_per_cell"],
+            "valid_cells": max(0, min(timing["pages"] * settings["cols"] * settings["rows"], int((dur + timing["secs_per_cell"] - 0.001) // timing["secs_per_cell"]))) if dur > 0 else timing["pages"] * settings["cols"] * settings["rows"],
             "sheets": {str(k): v for k, v in sheets.items()},
             "subtitles": episode_subtitles(cfg, settings, episode),
         }
@@ -556,12 +603,18 @@ def download_fcpxml():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Visual contact-sheet clip picker")
+    parser.add_argument("command", nargs="?", choices=["serve", "generate-sheets"], default="serve", help="Run the web UI or generate contact sheets")
     parser.add_argument("--config", default=None, help="Path to segments.json")
     parser.add_argument("--selections", default=None, help="Path to selections.json")
     parser.add_argument("--host", default=HOST, help="Bind host")
     parser.add_argument("--port", type=int, default=PORT, help="Bind port")
+    parser.add_argument("--force", action="store_true", help="Regenerate existing contact sheets")
     args = parser.parse_args()
     configure_paths(args.config, args.selections)
+    if args.command == "generate-sheets":
+        for item in generate_contact_sheets(load_cfg(), force=args.force):
+            print(json.dumps(item, ensure_ascii=False))
+        raise SystemExit(0)
     print(f"Clip Picker → http://{args.host}:{args.port}")
     print(f"Config → {CFG_FILE}")
     app.run(host=args.host, port=args.port, debug=False)

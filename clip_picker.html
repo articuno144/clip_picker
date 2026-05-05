@@ -69,6 +69,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 /* ── selection overlay ── */
 .selection-box{position:absolute;border:2px solid var(--primary);background:rgba(37,99,235,0.18);pointer-events:none;z-index:10;border-radius:3px}
 .cell-highlight{position:absolute;outline:2px solid rgba(245,158,11,.9);background:rgba(245,158,11,0.22);pointer-events:none;z-index:9;border-radius:3px}
+.invalid-cell{position:absolute;background:rgba(15,23,42,.58);pointer-events:none;z-index:8}
 #subtitle-tooltip{position:absolute;display:none;max-width:min(520px,calc(100% - 28px));background:rgba(255,255,255,.96);border:1px solid var(--line-strong);border-radius:10px;padding:10px 12px;box-shadow:var(--shadow);z-index:20;pointer-events:none;font-size:12px;line-height:1.35;color:var(--text)}
 #subtitle-tooltip.show{display:block}
 .subtitle-group{margin-bottom:7px}
@@ -215,6 +216,7 @@ const I18N = {
     currentCell: "Current",
     nextCell: "Next",
     noSubtitles: "No subtitles near this cell",
+    invalidCell: "This cell is past the end of the video",
     readyExport: "Ready to export",
     configLoadFailed: "Failed to load config",
     noSegment: "No segment",
@@ -253,6 +255,7 @@ const I18N = {
     currentCell: "当前格",
     nextCell: "下一格",
     noSubtitles: "这一格附近没有字幕",
+    invalidCell: "这一格已经超过视频结尾",
     readyExport: "准备导出",
     configLoadFailed: "配置加载失败",
     noSegment: "没有 segment",
@@ -458,6 +461,15 @@ function cellSeconds(epInfo = episodeInfo()) {
   return Number(epInfo && epInfo.secs_per_cell) || Number(CONFIG.secs_per_cell) || 1;
 }
 
+function cellIndexOnEpisode(page, row, col) {
+  return page * CONFIG.sheet_cols * CONFIG.sheet_rows + row * CONFIG.sheet_cols + col;
+}
+
+function isValidCell(page, row, col, epInfo = episodeInfo()) {
+  if (!epInfo || !Number(epInfo.duration)) return true;
+  return cellIndexOnEpisode(page, row, col) < Number(epInfo.valid_cells || 0);
+}
+
 // ── contact sheet ──
 function renderSheet() {
   const seg = currentSegment();
@@ -532,6 +544,7 @@ function getCellFromEvent(e) {
   const col = Math.floor(x / cellW);
   const row = Math.floor(y / cellH);
   if (col < 0 || col >= CONFIG.sheet_cols || row < 0 || row >= CONFIG.sheet_rows) return null;
+  if (!isValidCell(currentPage, row, col)) return null;
   return { row, col };
 }
 
@@ -657,7 +670,7 @@ function renderDurationBars(parts, totalClip, narDur) {
 // ── overlays ──
 function drawOverlays() {
   // Remove old overlays
-  document.querySelectorAll(".selection-box,.cell-highlight").forEach(el => el.remove());
+  document.querySelectorAll(".selection-box,.cell-highlight,.invalid-cell").forEach(el => el.remove());
 
   const seg = CONFIG.segments[currentSegIdx];
   const sel = CONFIG.selections[seg.id];
@@ -675,6 +688,8 @@ function drawOverlays() {
     highlightRange(part.start, part.end, cellW, cellH, container, img);
   });
 
+  drawInvalidCells(cellW, cellH, container, img);
+
   // Show current selection
   if (selecting) {
     const sc = selecting;
@@ -686,6 +701,24 @@ function drawOverlays() {
     div.style.width = cellW + "px";
     div.style.height = cellH + "px";
     container.appendChild(div);
+  }
+}
+
+function drawInvalidCells(cellW, cellH, container, img) {
+  const epInfo = episodeInfo();
+  if (!epInfo || !Number(epInfo.duration)) return;
+  for (let row = 0; row < CONFIG.sheet_rows; row++) {
+    for (let col = 0; col < CONFIG.sheet_cols; col++) {
+      if (isValidCell(currentPage, row, col, epInfo)) continue;
+      const div = document.createElement("div");
+      div.className = "invalid-cell";
+      div.style.left = (img.offsetLeft + col * cellW) + "px";
+      div.style.top = (img.offsetTop + row * cellH) + "px";
+      div.style.width = cellW + "px";
+      div.style.height = cellH + "px";
+      div.title = t("invalidCell");
+      container.appendChild(div);
+    }
   }
 }
 

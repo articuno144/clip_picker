@@ -64,7 +64,7 @@ clip-picker/
 }
 ```
 
-`seconds_per_frame` is the fallback timing when no source duration is available. When source videos and contact sheets are present, the app derives each page's duration as `video_duration / number_of_contact_sheet_pages`, so it works with contact sheets generated at any consistent sampling density.
+`seconds_per_frame` controls the contact-sheet timing model. Each page covers `contact_sheet_cols × contact_sheet_rows × seconds_per_frame` seconds. Cells past the source video's actual duration are treated as invalid and cannot be selected.
 
 `title` is read from `segments.json` and displayed in the top bar; it is not hardcoded into the app.
 
@@ -90,30 +90,19 @@ Configure `subtitle_dir` in `segments.json`, or set `subtitle_file` to a single 
 
 ## Generating contact sheets
 
-For a new project, generate contact sheets before running the app. Sheet filenames can use any of these prefixes:
+For a new project, generate contact sheets before running the app:
+
+```bash
+python /path/to/clip-picker/clip_picker.py generate-sheets --config /path/to/project/segments.json
+```
+
+This runs `ffmpeg` with the same timing model used by the UI. Sheet filenames can use any of these prefixes:
 
 - `ep01_page0.jpg` for a numeric video id like `01`
 - `12_page0.jpg` for the same numeric video id
 - `My_Video_page0.jpg` for a non-numeric video stem
 
-```bash
-# Example: fixed 8×8 pages, roughly 5 seconds per cell
-mkdir -p contact_sheets
-for file in videos/*.{mp4,mov,mkv,m4v,webm}; do
-  [ -e "$file" ] || continue
-  base=$(basename "$file")
-  stem="${base%.*}"
-  safe=$(printf '%s' "$stem" | tr -cs '[:alnum:]_.-' '_')
-  dur=$(ffprobe -v error -show_entries format=duration \
-    -of default=noprint_wrappers=1:nokey=1 "$file")
-  pages=$(( (${dur%.*} + 319) / 320 ))
-  for page in $(seq 0 $((pages - 1))); do
-    ffmpeg -ss $((page * 320)) -i "$file" -t 320 \
-      -vf "fps=1/5,scale=360:-1,tile=8x8:margin=2:padding=1:color=0x111111" \
-      -frames:v 1 "contact_sheets/${safe}_page${page}.jpg" -y
-  done
-done
-```
+Use `--force` to regenerate existing sheets.
 
 ## Workflow
 

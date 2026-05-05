@@ -17,6 +17,14 @@ python clip_picker.py --config /path/to/project/segments.json
 
 Open `http://127.0.0.1:8720/`. Do not open `clip_picker.html` directly with `file://`, because export and progress require the Flask API.
 
+## Generate contact sheets
+
+```bash
+python clip_picker.py generate-sheets --config /path/to/project/segments.json
+```
+
+This uses `contact_sheet_cols`, `contact_sheet_rows`, and `seconds_per_frame` from `segments.json`. The UI uses the same timing model, and cells beyond the actual video duration are invalid.
+
 ## Project config
 
 The target project needs a `segments.json` with:

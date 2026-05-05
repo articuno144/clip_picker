@@ -607,6 +607,7 @@ function addPart(startSec, endSec) {
   renderParts();
   updateSegDots();
   updateDoneBtn();
+  drawOverlays();
   autoSave();
   toast(t("added", fmtTime(boundedStart), fmtTime(boundedEnd), (boundedEnd-boundedStart).toFixed(1)));
 }
@@ -619,6 +620,7 @@ function removePart(idx) {
   renderParts();
   updateSegDots();
   updateDoneBtn();
+  drawOverlays();
   autoSave();
 }
 

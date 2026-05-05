@@ -329,6 +329,19 @@ def sheet_metadata_matches(sheet_path: Path, expected: dict) -> bool:
         return False
     return all(current.get(key) == value for key, value in expected.items())
 
+def cleanup_generated_sheets(sheet_dir: Path, prefix: str, pages: int) -> None:
+    for item in sheet_dir.glob(f"{prefix}_page*"):
+        match = re.match(rf"^{re.escape(prefix)}_page(\d+)\.(?:jpe?g|png|webp)(?:\.json)?$", item.name, re.IGNORECASE)
+        if match and int(match.group(1)) >= pages:
+            item.unlink(missing_ok=True)
+
+def write_sheet_metadata(sheet_dir: Path, prefix: str, pages: int, video_path: Path, duration: float, settings: dict) -> None:
+    for page in range(pages):
+        out = sheet_dir / f"{prefix}_page{page}.jpg"
+        if out.exists():
+            meta = sheet_metadata(video_path, duration, settings, page)
+            sheet_metadata_path(out).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
 def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
     settings = runtime_settings(cfg)
     settings["sheet_dir"].mkdir(parents=True, exist_ok=True)
@@ -341,32 +354,35 @@ def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
             continue
         pages = int((duration + settings["page_secs"] - 0.001) // settings["page_secs"])
         prefix = video_output_prefix(video_path)
+        expected = [sheet_metadata(video_path, duration, settings, page) for page in range(pages)]
+        outputs = [settings["sheet_dir"] / f"{prefix}_page{page}.jpg" for page in range(pages)]
+        skipped = sum(1 for out, meta in zip(outputs, expected) if sheet_metadata_matches(out, meta))
         generated = 0
-        skipped = 0
-        for page in range(pages):
-            out = settings["sheet_dir"] / f"{prefix}_page{page}.jpg"
-            meta = sheet_metadata(video_path, duration, settings, page)
-            if not force and sheet_metadata_matches(out, meta):
-                skipped += 1
-                continue
+        if force or skipped < pages:
+            for out in outputs:
+                out.unlink(missing_ok=True)
+                sheet_metadata_path(out).unlink(missing_ok=True)
+            pattern = settings["sheet_dir"] / f"{prefix}_page%d.jpg"
             cmd = [
                 "ffmpeg", "-y",
-                "-ss", str(page * settings["page_secs"]),
                 "-i", str(video_path),
-                "-t", str(settings["page_secs"]),
                 "-vf", (
                     f"fps=1/{settings['secs']},scale=360:-1,"
-                    f"tile={settings['cols']}x{settings['rows']}:margin=2:padding=1:color=0x111111"
+                    f"tile={settings['cols']}x{settings['rows']}:nb_frames={settings['cols'] * settings['rows']}:"
+                    "margin=2:padding=1:color=0x111111"
                 ),
-                "-frames:v", "1",
-                str(out),
+                "-frames:v", str(pages),
+                "-start_number", "0",
+                str(pattern),
             ]
-            ok, error = run_ffmpeg(cmd, timeout=180)
+            ok, error = run_ffmpeg(cmd, timeout=600)
             if not ok:
-                results.append({"id": episode["id"], "page": page, "ok": False, "error": error})
+                results.append({"id": episode["id"], "ok": False, "error": error})
                 continue
-            sheet_metadata_path(out).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            generated += 1
+            generated = sum(1 for out in outputs if out.exists())
+            skipped = 0
+            write_sheet_metadata(settings["sheet_dir"], prefix, pages, video_path, duration, settings)
+        cleanup_generated_sheets(settings["sheet_dir"], prefix, pages)
         results.append({
             "id": episode["id"],
             "file": str(video_path),

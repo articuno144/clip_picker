@@ -85,7 +85,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
 #prompt-bar .text{font-size:12px;color:var(--muted);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-top:3px;max-height:44px;overflow-y:auto;white-space:pre-wrap}
 
 /* ── right panel ── */
-#right h3{font-size:15px;padding:16px 18px 10px;color:var(--text)}
+#parts-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:16px 18px 10px}
+#right h3{font-size:15px;color:var(--text)}
+#clear-parts-btn{border:1px solid var(--line);background:#fff;color:var(--danger);border-radius:999px;padding:6px 10px;font-size:11px;font-weight:800;cursor:pointer;transition:.15s ease}
+#clear-parts-btn:hover:not(:disabled){border-color:rgba(220,38,38,.35);background:#fff1f2}
+#clear-parts-btn:disabled{opacity:.4;cursor:not-allowed}
 #parts-list{flex:1;overflow-y:auto;padding:0 14px}
 .part-item{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:9px;box-shadow:0 4px 14px rgba(15,23,42,.05)}
 .part-item .range{font-weight:800;color:#b45309;font-size:14px}
@@ -171,7 +175,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;backgrou
   </div>
 
   <div id="right">
-    <h3 data-i18n="selectedClips">Selected clips</h3>
+    <div id="parts-header">
+      <h3 data-i18n="selectedClips">Selected clips</h3>
+      <button id="clear-parts-btn" onclick="clearCurrentSelections()" data-i18n="clearSelections">Clear selections</button>
+    </div>
     <div id="parts-list"></div>
     <div id="summary">
       <div class="duration-card">
@@ -210,6 +217,7 @@ const I18N = {
     noSheetPage: "No contact sheet found for this page",
     searchHint: "Search hint",
     selectedClips: "Selected clips",
+    clearSelections: "Clear selections",
     selectedDuration: "Selected duration",
     narrationDuration: "Narration duration",
     previousCell: "Previous",
@@ -227,6 +235,8 @@ const I18N = {
     imageLoadFailed: "Contact sheet image failed to load",
     invalidRange: "Invalid selection range",
     added: (start, end, dur) => `Added: ${start} – ${end} (${dur}s)`,
+    confirmClearSelections: "Clear all selections for this segment?",
+    clearedSelections: "Cleared selections",
     saveFailed: "Save failed",
     confirmIncomplete: "Some segments are incomplete. Export anyway?",
     preparingExport: "Preparing export",
@@ -249,6 +259,7 @@ const I18N = {
     noSheetPage: "没有找到这一页的 contact sheet",
     searchHint: "搜索提示",
     selectedClips: "已选片段",
+    clearSelections: "清空选择",
     selectedDuration: "已选总时长",
     narrationDuration: "旁白时长",
     previousCell: "上一格",
@@ -266,6 +277,8 @@ const I18N = {
     imageLoadFailed: "contact sheet 图片加载失败",
     invalidRange: "选择范围无效",
     added: (start, end, dur) => `已添加: ${start} – ${end} (${dur}s)`,
+    confirmClearSelections: "清空当前段落的所有选择？",
+    clearedSelections: "已清空选择",
     saveFailed: "保存失败",
     confirmIncomplete: "还有 segment 未完成，确定要导出吗？",
     preparingExport: "准备导出",
@@ -624,11 +637,29 @@ function removePart(idx) {
   autoSave();
 }
 
+function clearCurrentSelections() {
+  const seg = CONFIG.segments[currentSegIdx];
+  const sid = seg.id;
+  const sel = CONFIG.selections[sid];
+  if (!sel || !sel.parts || sel.parts.length === 0) return;
+  if (!confirm(t("confirmClearSelections"))) return;
+  sel.parts = [];
+  selecting = null;
+  document.getElementById("sel-hint").style.display = "none";
+  renderParts();
+  updateSegDots();
+  updateDoneBtn();
+  drawOverlays();
+  autoSave();
+  toast(t("clearedSelections"));
+}
+
 function renderParts() {
   const seg = CONFIG.segments[currentSegIdx];
   const sid = seg.id;
   const sel = CONFIG.selections[sid];
   const parts = (sel && sel.parts) ? sel.parts : [];
+  document.getElementById("clear-parts-btn").disabled = parts.length === 0;
 
   const list = document.getElementById("parts-list");
   list.innerHTML = parts.map((p, i) => `

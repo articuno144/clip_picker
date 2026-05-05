@@ -25,6 +25,8 @@ python clip_picker.py generate-sheets --config /path/to/project/segments.json
 
 This uses `contact_sheet_cols`, `contact_sheet_rows`, and `seconds_per_frame` from `segments.json`. The UI uses the same timing model, and cells beyond the actual video duration are invalid.
 
+Generated sheets include `.json` sidecar metadata. If the timing settings or source video change, run `generate-sheets` again; stale sheets are regenerated automatically.
+
 ## Project config
 
 The target project needs a `segments.json` with:

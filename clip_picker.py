@@ -302,6 +302,33 @@ def run_ffmpeg(cmd, timeout: int = 120):
 def video_output_prefix(path: Path) -> str:
     return f"ep{episode_id_for_file(path)}" if re.match(r"^\d{1,3}(?:\D|$)", path.name) else safe_label(path.stem)
 
+def sheet_metadata_path(sheet_path: Path) -> Path:
+    return sheet_path.with_name(sheet_path.name + ".json")
+
+def sheet_metadata(video_path: Path, duration: float, settings: dict, page: int) -> dict:
+    return {
+        "generator": "clip-picker-contact-sheet-v1",
+        "source": str(video_path.resolve()),
+        "source_mtime": video_path.stat().st_mtime,
+        "duration": round(duration, 3),
+        "page": page,
+        "page_start": round(page * settings["page_secs"], 3),
+        "page_secs": round(settings["page_secs"], 3),
+        "seconds_per_frame": round(settings["secs"], 3),
+        "cols": settings["cols"],
+        "rows": settings["rows"],
+    }
+
+def sheet_metadata_matches(sheet_path: Path, expected: dict) -> bool:
+    meta_path = sheet_metadata_path(sheet_path)
+    if not sheet_path.exists() or not meta_path.exists():
+        return False
+    try:
+        current = json.loads(meta_path.read_text(encoding="utf-8"))
+    except Exception:
+        return False
+    return all(current.get(key) == value for key, value in expected.items())
+
 def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
     settings = runtime_settings(cfg)
     settings["sheet_dir"].mkdir(parents=True, exist_ok=True)
@@ -318,7 +345,8 @@ def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
         skipped = 0
         for page in range(pages):
             out = settings["sheet_dir"] / f"{prefix}_page{page}.jpg"
-            if out.exists() and not force:
+            meta = sheet_metadata(video_path, duration, settings, page)
+            if not force and sheet_metadata_matches(out, meta):
                 skipped += 1
                 continue
             cmd = [
@@ -337,6 +365,7 @@ def generate_contact_sheets(cfg: dict, force: bool = False) -> list[dict]:
             if not ok:
                 results.append({"id": episode["id"], "page": page, "ok": False, "error": error})
                 continue
+            sheet_metadata_path(out).write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
             generated += 1
         results.append({
             "id": episode["id"],

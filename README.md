@@ -102,7 +102,7 @@ This runs `ffmpeg` with the same timing model used by the UI. Sheet filenames ca
 - `12_page0.jpg` for the same numeric video id
 - `My_Video_page0.jpg` for a non-numeric video stem
 
-Use `--force` to regenerate existing sheets.
+Each generated sheet also gets a small `.json` sidecar recording the source video and timing settings. If `seconds_per_frame`, grid size, page start, or source file changes, `generate-sheets` regenerates stale sheets automatically. Use `--force` to regenerate everything.
 
 ## Workflow
 
